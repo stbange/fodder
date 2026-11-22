@@ -1,0 +1,36 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "native",
+      "displayName": "Native game",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+    },
+    {
+      "name": "web",
+      "displayName": "Emscripten browser and WebXR",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/web",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "OFF"}
+    },
+    {
+      "name": "coverage",
+      "displayName": "GCC engine unit coverage",
+      "inherits": "native",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "FODDER_COVERAGE": "ON", "FODDER_BUILD_GAME": "OFF"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "native", "configurePreset": "native"},
+    {"name": "web", "configurePreset": "web"},
+    {"name": "coverage", "configurePreset": "coverage"}
+  ],
+  "testPresets": [
+    {"name": "native", "configurePreset": "native", "output": {"outputOnFailure": true}, "filter": {"exclude": {"label": "display"}}},
+    {"name": "coverage", "configurePreset": "coverage", "output": {"outputOnFailure": true}, "filter": {"include": {"label": "unit"}}}
+  ]
+}

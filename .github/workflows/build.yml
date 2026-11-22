@@ -1,0 +1,143 @@
+name: Build and publish Fodder
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fodder-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENSPEC_TELEMETRY: "0"
+
+jobs:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run spec
+      - run: npm exec -- openspec validate --archived
+      - run: npm run coverage:js
+      - run: cmake --preset coverage && cmake --build --preset coverage --parallel 4
+      - run: ctest --preset coverage
+      - name: Measure C unit coverage
+        run: >
+          pipx run --spec gcovr==8.4 gcovr build/coverage
+          --root . --filter 'src/engine/'
+          --print-summary --fail-under-line 95 --xml build/coverage/c.xml
+      - name: Measure Lua unit coverage
+        run: |
+          git clone --depth 1 --branch v0.17.0 https://github.com/lunarmodules/luacov.git build/luacov
+          export LUA_PATH="$PWD/build/luacov/src/?.lua;$PWD/build/luacov/src/?/init.lua;;"
+          export LUACOV_CONFIG="$PWD/tools/luacov.config"
+          build/coverage/fodder_lua_runner -lluacov tests/unit/rules.lua assets/packs/fantasy/scripts/battles.lua
+          python3 tools/assert_lua_coverage.py
+      - uses: actions/upload-artifact@v6
+        with:
+          name: unit-coverage
+          path: |
+            build/coverage/c.xml
+            build/coverage/lua.txt
+
+  native:
+    if: github.ref == 'refs/heads/main'
+    name: Native on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Linux SDL/OpenGL build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxinerama-dev libasound2-dev xvfb xauth
+      - run: cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/native --config Release --parallel 4
+      - run: ctest --test-dir build/native -C Release -LE display --output-on-failure
+      - name: OpenGL launch test on Linux
+        if: runner.os == 'Linux'
+        env:
+          SDL_AUDIODRIVER: dummy
+        run: xvfb-run -a ctest --test-dir build/native -C Release -L display --output-on-failure
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fodder-${{ runner.os }}-${{ runner.arch }}
+          path: build/native/play/
+          include-hidden-files: false
+
+  web:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      pages-enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Build WebAssembly
+        run: |
+          git clone --depth 1 --branch 4.0.16 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.16
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.16
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          cmake --preset web
+          cmake --build --preset web --parallel 4
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fodder-web
+          path: build/web/play/
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web/play/
+      - name: Check whether Pages is enabled
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          enabled="$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_pages)"
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [ "$enabled" != true ]; then
+            echo "::warning::Repository Pages settings require an administrator to select GitHub Actions as the publishing source."
+          fi
+
+  publish:
+    needs: [checks, native, web]
+    if: github.ref == 'refs/heads/main' && needs.web.outputs.pages-enabled == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deploy
+      - name: Check public project files
+        env:
+          PAGE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          for file in index.html fodder.wasm assets/packs/fantasy/pack.json; do
+            curl --fail --silent --show-error --retry 7 --retry-all-errors --retry-delay 5 "${PAGE_URL%/}/$file" -o /dev/null
+          done

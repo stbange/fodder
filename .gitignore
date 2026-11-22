@@ -1,0 +1,9 @@
+/build/
+/dist/
+/node_modules/
+/coverage/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+/tests/browser/results/

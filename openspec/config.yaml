@@ -1,0 +1,7 @@
+schema: spec-driven
+
+context: |
+  Fodder is a first-person fantasy game with exactly 1,000 individually tracked soldiers.
+  The engine uses C17, SDL3 and OpenGL. Game rules and loose assets are packaged separately.
+  The web target uses Emscripten, browser touch controls and immersive WebXR.
+  Changes are committed to main. First-party code is MIT and original art is CC BY 4.0.

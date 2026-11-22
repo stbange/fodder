@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101918">
+  <meta name="description" content="A first-person battle of 1,000 soldiers. Survive the Broken Ford and earn permanent upgrades.">
+  <title>Fodder · The Broken Ford</title>
+  <link rel="icon" href="./assets/ui/emblem.png" type="image/png">
+  <link rel="stylesheet" href="./game.css">
+</head>
+<body>
+  <main id="game" aria-label="Fodder">
+    <canvas id="canvas" aria-label="First-person battlefield" tabindex="0"></canvas>
+    <div id="battle-overlay" class="battle-overlay" hidden>
+      <button id="pause" class="small-button" type="button" aria-label="Pause battle"><i class="pause-icon" aria-hidden="true"></i></button>
+    </div>
+    <div id="touch" class="touch" hidden>
+      <div id="move-zone" aria-label="Move" role="region"><i id="knob"></i></div>
+      <div id="look-zone" aria-label="Drag to look" role="region"></div>
+      <button type="button" id="block" class="touch-button">Block</button>
+      <button type="button" id="attack" class="touch-button">Strike</button>
+    </div>
+
+    <div id="overlay" class="overlay">
+      <header class="topbar">
+        <div class="sigil" aria-hidden="true"><i></i><i></i><i></i></div>
+        <nav aria-label="Game tools">
+          <button id="xr-enter" class="small-button" type="button" hidden>Enter VR</button>
+          <button id="controls" class="small-button" type="button" popovertarget="control-panel">Controls</button>
+          <button id="packs" class="small-button" type="button" disabled>Content packs</button>
+        </nav>
+      </header>
+
+      <section id="camp" class="camp" aria-labelledby="title">
+        <p id="arena" class="overline">The Broken Ford</p>
+        <h1 id="title">Fodder</h1>
+        <p class="pitch">One soldier in a battle of a thousand. Survive to earn permanent upgrades.</p>
+        <div class="encounter">
+          <h2 id="variant">Hold the Ford</h2>
+          <p id="hint">Advance with the Reed Guard or cut through the ruins.</p>
+        </div>
+        <button id="deploy" class="primary" type="button" disabled>Loading battlefield</button>
+        <p id="status" class="status" role="status"></p>
+        <div id="profile" class="profile" hidden>
+          <span id="best-kills"></span>
+          <span id="best-streak"></span>
+        </div>
+      </section>
+
+      <section id="interlude" class="interlude" hidden aria-live="polite">
+        <p id="result-tag" class="overline"></p>
+        <h2 id="result-title"></h2>
+        <p id="result-description"></p>
+        <div id="rewards" class="rewards" hidden></div>
+        <button id="continue" class="primary" type="button"></button>
+      </section>
+
+      <aside class="armies" id="armies" aria-label="Armies deployed">
+        <div><i class="reed" aria-hidden="true"></i><span>Reed Guard</span><strong>500</strong></div>
+        <div><i class="cinder" aria-hidden="true"></i><span>Cinder Host</span><strong>500</strong></div>
+      </aside>
+
+      <footer>
+        <span id="quick-controls">WASD Move · Mouse Look · Left Strike · Right Block</span>
+        <a href="./assets/ATTRIBUTION.md" target="_blank" rel="noopener">Art credits</a>
+      </footer>
+    </div>
+
+    <section class="tools-panel" id="control-panel" popover aria-label="Controls">
+      <h2>Controls</h2>
+      <label for="input-mode">Control mode</label>
+      <select id="input-mode">
+        <option value="auto">Automatic</option>
+        <option value="mouse">Keyboard and mouse</option>
+        <option value="touch">Touch</option>
+      </select>
+      <p id="control-help">WASD to move. Mouse to look. Left click to strike and right click to block. Escape to pause.</p>
+    </section>
+
+    <dialog id="pack-dialog" aria-labelledby="pack-title">
+      <div class="dialog-heading">
+        <h2 id="pack-title">Content packs</h2>
+        <form method="dialog"><button class="small-button" type="submit" aria-label="Close">×</button></form>
+      </div>
+      <p>Play the built-in fantasy campaign or import a ZIP with a <code>pack.json</code> at its root. Each pack keeps its own upgrades.</p>
+      <div id="pack-list"></div>
+      <label class="primary import">
+        Import ZIP
+        <input id="pack-file" type="file" accept=".zip,application/zip">
+      </label>
+      <p id="pack-status" class="status" role="status"></p>
+    </dialog>
+  </main>
+  <script type="module" src="./game.mjs"></script>
+</body>
+</html>

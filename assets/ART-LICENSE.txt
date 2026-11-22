@@ -1,0 +1,9 @@
+The original models, sprites, textures, UI font, and audio in Fodder are
+licensed under Creative Commons Attribution 4.0 International.
+
+https://creativecommons.org/licenses/by/4.0/legalcode.en
+
+Credit the Fodder contributors, link to the work and license, and indicate
+whether you modified the work. See ATTRIBUTION.md for the original works.
+Engine data schemas, Lua scripts, and GLSL shaders use the repository MIT
+license.

@@ -1,0 +1,16 @@
+{
+  "api": 1,
+  "id": "fantasy",
+  "title": "The Broken Ford",
+  "files": {
+    "script": "scripts/battles.lua",
+    "soldier": "models/levy.mesh",
+    "sword": "models/sword.mesh",
+    "shield": "models/shield.mesh",
+    "sprite": "sprites/ranks.tga",
+    "banner": "textures/banner.tga",
+    "strike": "audio/clash.wav",
+    "horn": "audio/horn.wav",
+    "crowd": "audio/warfield.wav"
+  }
+}
