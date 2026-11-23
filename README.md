@@ -2,8 +2,10 @@
 
 Deploy as one soldier in a thousand at the Broken Ford. Move with the Reed Guard,
 cross the river, or fight through the ruins. Stay alive until an army routs or
-the final horn sounds. Each survival earns a permanent upgrade. Your personal
-kill count and survival streak are recorded alongside your army's result.
+the final horn sounds. Each survival earns a permanent upgrade rank. Earn two
+deeds by landing counters or killing enemies to gain a second rank in the
+upgrade you choose. Your kill count and survival streak are recorded alongside
+your army's result.
 
 ## Play a native build
 
@@ -11,8 +13,11 @@ Download the package for your operating system from a successful GitHub Actions
 run. Extract the platform archive inside it so `assets/` is beside the executable or
 `Fodder.app`. Press **Enter** to deploy. Move with **WASD**, look with the mouse,
 strike with the left button, and block with the right button. Press **Escape**
-to pause. Choose upgrades with **1–3** or select one with the arrow keys and
-**Enter**. [Builds](https://github.com/stbange/fodder/actions)
+to pause. Click once per swing. Raise your shield just before an incoming
+strike lands to stagger the attacker, then release block and strike during the
+opening. You can also step clear of a committed swing. Watch the banks for
+enemy flankers. Choose upgrades with **1–3** or
+select one with the arrow keys and **Enter**. [Builds](https://github.com/stbange/fodder/actions)
 
 The web build switches to touch controls on phones. Drag the pad on the left to
 move and drag on the right to look. Use the buttons to strike, block, or pause.
@@ -63,8 +68,10 @@ sprites, textures, and audio. Asset paths use lowercase portable names such as
 The main Lua script returns an arena, a list of battles, three named upgrades,
 and an `effects` function for converting saved ranks to combat stats.
 Edit the duration, morale break threshold, lane preference, damage, fog,
-ruins, and upgrades there. The engine validates the descriptor and limits Lua
-to built-in table, string, and math operations and the return values it expects.
+ruins, and upgrades there. The optional `flankers` count puts soldiers from the
+enemy roster into each flanking detachment. The engine validates the descriptor
+and limits Lua to built-in table, string, and math operations and the return
+values it expects.
 Use the fantasy pack as a starting point for another genre.
 
 - Desktop players can run `fodder --pack your-pack-id` with the new folder in
@@ -74,8 +81,10 @@ Use the fantasy pack as a starting point for another genre.
   Imported packs and their independent profiles persist in browser storage.
 - Models use the text `FODDERM1` format with a vertex count and one line per
   vertex containing `x y z r g b team_tint`. Each group of three vertices makes
-  a triangle. Sprites and banners use uncompressed, bottom-origin 32-bit TGA
-  and sounds use WAV. Original assets can be regenerated with
+  a triangle. `FODDERM2` adds a final part number for soldier animation. Use
+  `0` for body, `1` for the sword arm, and `2` for the shield arm. The sword
+  arm pivots about `(0.32, 1.16, -0.06)` in model space. Sprites and banners use
+  uncompressed, bottom-origin 32-bit TGA and sounds use WAV. Regenerate assets with
   `python3 tools/generate_art.py`.
 
 ## Verify

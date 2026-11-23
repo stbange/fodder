@@ -12,6 +12,8 @@ enum {
     FODDER_OBSTACLES = 32,
     FODDER_GRID_SIDE = 48,
     FODDER_UPGRADES = 3,
+    FODDER_DEEDS_FOR_BONUS = 2,
+    FODDER_MAX_FLANKERS = 24,
     FODDER_LABEL = 48
 };
 
@@ -29,7 +31,7 @@ typedef struct {
 typedef struct {
     char name[FODDER_LABEL];
     char hint[96];
-    unsigned seconds;
+    unsigned seconds, flankers;
     float rout_fraction;
     float enemy_speed, ally_speed, enemy_damage, ally_damage;
     float player_damage, fog;
@@ -43,15 +45,16 @@ typedef struct {
 typedef struct {
     float move, strafe;
     float look_x, look_y;
-    bool attack, block;
+    bool attack, block, attack_pressed;
 } FodderInput;
 
 typedef struct {
     float x, z, yaw, vx, vz;
-    float health, cooldown, windup;
+    float health, cooldown, windup, windup_duration, recovery, stagger;
     uint16_t squad;
     int16_t target;
-    uint8_t side;
+    uint8_t side, flank_stage;
+    bool guarding;
 } FodderSoldier;
 
 typedef enum {
@@ -67,19 +70,30 @@ typedef enum {
     FODDER_DEATH
 } FodderEnd;
 
+typedef enum {
+    FODDER_COMBAT_NONE,
+    FODDER_COMBAT_HIT,
+    FODDER_COMBAT_MISS,
+    FODDER_COMBAT_BLOCKED,
+    FODDER_COMBAT_COUNTER
+} FodderCombatFeedback;
+
 typedef struct {
     const FodderArena *arena;
     FodderVariant variant;
     FodderEffects effects;
     FodderSoldier soldiers[FODDER_SOLDIERS];
     int16_t grid[FODDER_GRID_SIDE * FODDER_GRID_SIDE];
-    int16_t next[FODDER_SOLDIERS];
+    int16_t next[FODDER_SOLDIERS], previous[FODDER_SOLDIERS], cells[FODDER_SOLDIERS];
     float incoming[FODDER_SOLDIERS];
-    unsigned count, starting_per_side, alive[2], tick, kills;
+    uint8_t strikes_at[FODDER_SOLDIERS];
+    unsigned count, starting_per_side, alive[2], tick, kills, deeds;
     uint32_t rng;
-    float stamina, pitch, attack_time, swing;
-    float hurt;
-    bool guarding, dressed;
+    float stamina, pitch, hurt;
+    float guard_window, guard_rearm, counter_time, feedback_time;
+    int counter_target;
+    bool attack_held, block_held, dressed, flankers_nearby;
+    FodderCombatFeedback feedback;
     int winner;
     FodderOutcome outcome;
     FodderEnd end;
@@ -92,6 +106,7 @@ void fodder_battle_tick(FodderBattle *battle, FodderInput input);
 float fodder_ground(const FodderArena *arena, float x, float z);
 float fodder_clamp(float value, float low, float high);
 float fodder_wrap(float angle);
+float fodder_strike_phase(const FodderSoldier *soldier);
 unsigned fodder_time_left(const FodderBattle *battle);
 
 #endif

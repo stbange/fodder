@@ -24,7 +24,7 @@ typedef struct {
     void *storage;
     FodderScreen screen, after_save;
     unsigned selection;
-    bool saving, save_error;
+    bool saving, save_error, attack_down, queued_attack;
     double time_buffer;
     float queued_x, queued_y;
 } FodderSession;
@@ -34,6 +34,6 @@ void fodder_session_open(FodderSession *session, const FodderPack *pack, FodderP
 void fodder_session_action(FodderSession *session, FodderAction action);
 void fodder_session_frame(FodderSession *session, double elapsed, FodderInput input);
 void fodder_session_saved(FodderSession *session, bool success);
-void fodder_session_clear_look(FodderSession *session);
+void fodder_session_clear_input(FodderSession *session);
 
 #endif

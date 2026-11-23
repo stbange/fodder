@@ -13,8 +13,7 @@ struct FodderSound {
     SDL_AudioStream *stream;
     Clip strike, horn, crowd;
     FodderScreen previous;
-    unsigned last_tick;
-    bool horn_started;
+    bool striking, horn_started;
 };
 
 static const SDL_AudioSpec mono = {SDL_AUDIO_F32, 1, 22050};
@@ -88,7 +87,8 @@ void fodder_sound_frame(FodderSound *sound, const FodderSession *session)
     const FodderBattle *battle = &session->battle;
     if (session->screen == FODDER_FIGHT && sound->previous == FODDER_CAMP)
         sound->horn.offset = 0;
-    if (battle->tick != sound->last_tick && battle->swing > 0.0f && sound->strike.offset >= sound->strike.count)
+    bool striking = battle->soldiers[0].recovery > 0.0f;
+    if (striking && !sound->striking)
         sound->strike.offset = 0;
     if (!sound->horn_started && battle->outcome != FODDER_ACTIVE) {
         sound->horn.offset = 0;
@@ -96,7 +96,7 @@ void fodder_sound_frame(FodderSound *sound, const FodderSession *session)
     } else if (battle->outcome == FODDER_ACTIVE) {
         sound->horn_started = false;
     }
-    sound->last_tick = battle->tick;
+    sound->striking = striking;
     sound->previous = session->screen;
     for (int fill = 0; fill < 3 && SDL_GetAudioStreamQueued(sound->stream) < 3072; ++fill) {
         float frame[512];

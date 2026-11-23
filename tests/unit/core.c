@@ -73,31 +73,39 @@ static void test_profile(void)
     char encoded[FODDER_PROFILE_TEXT];
     CHECK(fodder_profile_encode(&p, encoded, sizeof(encoded)));
     CHECK(!fodder_profile_encode(&p, encoded, 3));
-    CHECK(!fodder_profile_decode(&q, "FODDER2 0", 1));
+    CHECK(!fodder_profile_decode(&q, "FODDER3 0", 1));
     CHECK(!fodder_profile_decode(&q, "FODDER1 0 -", 1));
     CHECK(!fodder_profile_decode(&q, "FODDER1 0 0", 1));
     CHECK(!fodder_profile_decode(&q, "FODDER1 42949672960 0 0 0 0 0 0 0 0 0 0", 1));
     CHECK(!fodder_profile_decode(&q, "FODDER1 0 0 0 0 0 0 0 0 0 0 1", 1));
     CHECK(!fodder_profile_decode(&q, "FODDER1 0 0 0 0 0 0 0 0 0 0 0", 0));
     uint32_t seed = fodder_profile_seed(&p);
-    CHECK(!fodder_profile_result(&q, &p, FODDER_ACTIVE, 0));
-    CHECK(!fodder_profile_result(&q, &p, FODDER_FALLEN, FODDER_ARMY_SIZE + 1));
+    CHECK(!fodder_profile_result(&q, &p, FODDER_ACTIVE, 0, 0));
+    CHECK(!fodder_profile_result(&q, &p, FODDER_FALLEN, FODDER_ARMY_SIZE + 1, 0));
     CHECK(!fodder_profile_claim(&q, &p, 0, 3));
-    CHECK(fodder_profile_result(&q, &p, FODDER_SURVIVED, 12));
+    CHECK(fodder_profile_result(&q, &p, FODDER_SURVIVED, 12, 0));
     CHECK(q.pending && q.streak == 1 && q.best_streak == 1 && q.best_kills == 12);
     CHECK(seed != fodder_profile_seed(&q));
-    CHECK(!fodder_profile_result(&r, &q, FODDER_SURVIVED, 12));
+    CHECK(!fodder_profile_result(&r, &q, FODDER_SURVIVED, 12, 0));
     CHECK(!fodder_profile_claim(&r, &q, 3, 3));
     CHECK(!fodder_profile_claim(&r, &q, 0, 0));
     CHECK(fodder_profile_claim(&r, &q, 1, 3));
     CHECK(!r.pending && r.variant == 1 && r.rank[1] == 1 && r.revision == 2);
-    CHECK(fodder_profile_result(&q, &r, FODDER_FALLEN, 0));
+    CHECK(fodder_profile_result(&q, &r, FODDER_FALLEN, 0, 0));
     CHECK(q.streak == 0 && q.best_streak == 1 && q.rank[1] == 1 && q.best_kills == 12);
     CHECK(fodder_profile_encode(&q, encoded, sizeof(encoded)));
     CHECK(fodder_profile_decode(&p, encoded, 1) && p.variant == 0 && p.rank[1] == 1);
     CHECK(fodder_profile_decode(&p, encoded, 3) && p.variant == 1 && p.attempts == 2);
+    CHECK(fodder_profile_decode(&p, "FODDER1 4 2 1 3 0 1 12 1 1 7 1", 3));
+    CHECK(p.rank[0] == 3 && p.pending && !p.bonus && fodder_profile_reward(&p) == 1);
+    CHECK(!fodder_profile_decode(&p, "FODDER2 4 2 1 3 0 1 12 1 1 7 0 1", 3));
+    CHECK(fodder_profile_result(&q, &r, FODDER_SURVIVED, 2, FODDER_DEEDS_FOR_BONUS));
+    CHECK(q.bonus && fodder_profile_encode(&q, encoded, sizeof(encoded)));
+    CHECK(fodder_profile_decode(&p, encoded, 3) && fodder_profile_reward(&p) == 2);
+    CHECK(fodder_profile_claim(&r, &p, 1, 3) && r.rank[1] == 3 && !r.bonus);
+    CHECK(!fodder_profile_claim(&q, &r, 1, 3));
     q.revision = UINT_MAX;
-    CHECK(!fodder_profile_result(&p, &q, FODDER_FALLEN, 0));
+    CHECK(!fodder_profile_result(&p, &q, FODDER_FALLEN, 0, 0));
     q.pending = true;
     CHECK(!fodder_profile_claim(&p, &q, 2, 3));
 }
@@ -149,7 +157,7 @@ static void test_pack(const FodderPack *pack)
     const char *mutations[] = {
         "rules.arena.obstacles[1] = 12", "rules.battles = {}", "rules.battles[1] = true",
         "rules.battles[1].hint = '\\n'", "rules.arena.width = 0/0", "rules.upgrades = true",
-        "rules.upgrades[1] = true", "rules.effects = false",
+        "rules.upgrades[1] = true", "rules.effects = false", "rules.battles[1].flankers = true",
         "rules.effects = function() return false end",
         "rules.effects = function() return { recovery=3, block_cost=1, dressing=0 } end"
     };
@@ -157,10 +165,10 @@ static void test_pack(const FodderPack *pack)
         wrap_rules(pack, mutations[i]);
         CHECK(!fodder_pack_open(&fixture_pack, test_root, error));
     }
-    wrap_rules(pack, "local effects = rules.effects; rules.effects = function(a,b,c) "
-                     "if a == 3 then error({}) end; return effects(a,b,c) end");
+    wrap_rules(pack, "local effects = rules.effects; rules.battles[1].flankers = nil; "
+                     "rules.effects = function(a,b,c) if a == 3 then error({}) end; return effects(a,b,c) end");
     CHECK(fodder_pack_open(&fixture_pack, test_root, error));
-    CHECK(!error[0] && fixture_pack.variant_count == 3);
+    CHECK(!error[0] && fixture_pack.variant_count == 3 && fixture_pack.variants[0].flankers == 0);
     unsigned ranks[] = {3, 8, 5};
     FodderEffects fallback = fodder_pack_effects(&fixture_pack, ranks);
     CHECK(fallback.recovery == 1 && fallback.block_cost == 1 && fallback.dressing == 0);
@@ -191,7 +199,13 @@ static void test_geometry(const FodderPack *pack)
     char path[FODDER_PATH];
     CHECK(fodder_pack_file(pack, FODDER_SOLDIER_MESH, path) && fodder_mesh_read(&mesh, path));
     CHECK(mesh.count > 100);
+    unsigned arm_vertices = 0;
+    for (unsigned i = 0; i < mesh.count; ++i)
+        arm_vertices += mesh.vertices[i].part == 1;
+    CHECK(arm_vertices > 30);
     fodder_mesh_free(&mesh);
+    text(fixture, "FODDERM2 3\n0 0 0 1 0 0 1 3\n");
+    CHECK(!fodder_mesh_read(&mesh, fixture));
     CHECK(fodder_landscape(&mesh, &pack->arena) && mesh.count > 10000);
     fodder_mesh_free(&mesh);
     CHECK(fodder_banners(&mesh, &pack->arena) && mesh.count == 24);
@@ -226,7 +240,9 @@ static void settle_near(FodderBattle *battle, bool in_front)
     FodderSoldier *attacker = &battle->soldiers[2];
     attacker->x = battle->soldiers[0].x;
     attacker->z = battle->soldiers[0].z + (in_front ? -1.5f : 1.5f);
+    attacker->yaw = in_front ? 3.1415927f : 0;
     attacker->windup = 0.005f;
+    attacker->windup_duration = 0.4f;
     attacker->target = 0;
 }
 
@@ -246,6 +262,7 @@ static void test_battle(const FodderPack *pack)
     variant.rout_fraction = 0.5f;
     variant.enemy_damage = 15.0f / 2.65f;
     fodder_battle_start(&battle, &arena, &variant, effects, 42, 2);
+    battle.block_held = true;
     settle_near(&battle, true);
     fodder_battle_tick(&battle, (FodderInput){.block = true});
     CHECK(battle.stamina < 0.9f && battle.soldiers[0].health > 96);
@@ -256,7 +273,7 @@ static void test_battle(const FodderPack *pack)
     settle_near(&battle, true);
     battle.soldiers[2].windup = 0;
     battle.soldiers[2].health = 1;
-    for (unsigned i = 0; i < 14; ++i)
+    for (unsigned i = 0; i < 16; ++i)
         fodder_battle_tick(&battle, (FodderInput){.attack = true});
     CHECK(battle.kills == 1 && battle.outcome == FODDER_SURVIVED &&
           battle.end == FODDER_ROUT && battle.winner == 0);
@@ -292,6 +309,100 @@ static void test_battle(const FodderPack *pack)
     CHECK(close_float(fodder_wrap(8), 1.7168f));
 }
 
+static void ticks(FodderBattle *battle, unsigned count, FodderInput input)
+{
+    for (unsigned i = 0; i < count; ++i)
+        fodder_battle_tick(battle, input);
+}
+
+static void test_melee(const FodderPack *pack)
+{
+    FodderArena arena = pack->arena;
+    arena.obstacle_count = 0;
+    FodderVariant variant = pack->variants[0];
+    variant.ally_speed = variant.enemy_speed = 0;
+    variant.rout_fraction = 0;
+    FodderEffects effects = {1, 1, 0};
+    FodderBattle battle;
+    fodder_battle_start(&battle, &arena, &variant, effects, 9, 2);
+    FodderSoldier *player = &battle.soldiers[0], *ally = &battle.soldiers[1];
+    FodderSoldier *enemy = &battle.soldiers[2];
+    ally->x = player->x;
+    ally->z = player->z - 2.0f;
+    ticks(&battle, 40, (FodderInput){.move = 1});
+    CHECK(player->z - ally->z >= 0.699f && player->z - ally->z < 0.80f);
+    ticks(&battle, 15, (FodderInput){.strafe = 1});
+    ticks(&battle, 35, (FodderInput){.move = 1});
+    CHECK(player->z < ally->z && player->x > 0.70f);
+    enemy->x = player->x;
+    enemy->z = player->z - 1.7f;
+    enemy->cooldown = 30;
+    ticks(&battle, 35, (FodderInput){.move = 1});
+    CHECK(player->z - enemy->z >= 0.699f && player->z - enemy->z < 0.80f);
+    enemy->health = 0;
+    --battle.alive[1];
+    ticks(&battle, 30, (FodderInput){.move = 1});
+    CHECK(player->z < enemy->z);
+
+    // A moving ally changes grid cells just before a second ally tries to enter.
+    fodder_battle_start(&battle, &arena, &variant, effects, 9, 3);
+    player->x = player->z = 48;
+    *ally = (FodderSoldier){.x = 3.95f, .z = 18, .vx = 4, .health = 100, .target = -1};
+    *enemy = (FodderSoldier){.x = 4.73f, .z = 18, .vx = -4, .health = 100, .target = -1};
+    ticks(&battle, 2, (FodderInput){0});
+    CHECK(ally->x > 4.0f && enemy->x - ally->x >= 0.699f);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    ally->x = player->x;
+    ally->z = player->z - 0.95f;
+    enemy->x = player->x;
+    enemy->z = player->z - 1.9f;
+    enemy->cooldown = 30;
+    CHECK(fodder_strike_phase(player) == 0);
+    ticks(&battle, 10, (FodderInput){.attack = true});
+    CHECK(fodder_strike_phase(player) > 0 && fodder_strike_phase(player) < 0.42f);
+    ticks(&battle, 6, (FodderInput){.attack = true});
+    CHECK(fodder_strike_phase(player) >= 0.42f && battle.feedback == FODDER_COMBAT_MISS);
+    CHECK(enemy->health == 100.0f);
+    ally->x = 3;
+    ticks(&battle, 85, (FodderInput){.attack = true});
+    CHECK(fodder_strike_phase(player) == 0 && enemy->health == 100.0f);
+    ticks(&battle, 1, (FodderInput){0});
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(battle.feedback == FODDER_COMBAT_HIT && enemy->health < 100.0f);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    CHECK(fodder_strike_phase(enemy) > 0.40f);
+    ticks(&battle, 1, (FodderInput){.block = true});
+    CHECK(player->health == 100.0f && enemy->stagger > 0 && battle.counter_target == 2 &&
+          battle.counter_time > 0 && battle.deeds == 0);
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(player->health == 100.0f && enemy->health == 0 && battle.feedback == FODDER_COMBAT_COUNTER);
+    CHECK(battle.kills == 1 && battle.deeds == 1 && battle.counter_time == 0);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    enemy->x = player->x - 1.5f;
+    enemy->z = player->z;
+    ticks(&battle, 1, (FodderInput){0});
+    CHECK(enemy->recovery > 0.0f && player->health == 100.0f);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    enemy->x = player->x;
+    enemy->z = player->z - 1.5f;
+    enemy->cooldown = 30;
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(battle.feedback == FODDER_COMBAT_BLOCKED && enemy->health > 100.0f - variant.player_damage);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    arena.obstacle_count = 1;
+    arena.obstacles[0] = (FodderObstacle){0, player->z - 0.6f, 0.3f, 0.11f, 2};
+    settle_near(&battle, true);
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(battle.feedback == FODDER_COMBAT_MISS && enemy->health == 100.0f && player->health == 100.0f);
+}
+
 typedef struct {
     FodderWrite writes;
     unsigned count;
@@ -324,6 +435,11 @@ static void test_session(FodderPack *pack)
     CHECK(app.queued_x > 0 && app.battle.tick == 0);
     fodder_session_frame(&app, 0.015, (FodderInput){.look_x = 0.1f});
     CHECK(close_float(app.battle.soldiers[0].yaw, 0.4f));
+    fodder_session_frame(&app, 0.004, (FodderInput){.attack = true});
+    CHECK(app.queued_attack && fodder_strike_phase(app.battle.soldiers) == 0);
+    fodder_session_frame(&app, 0.012, (FodderInput){0});
+    CHECK(!app.queued_attack && fodder_strike_phase(app.battle.soldiers) > 0);
+    app.battle.deeds = FODDER_DEEDS_FOR_BONUS;
     app.battle.tick = 59;
     fodder_session_frame(&app, 0.03, (FodderInput){0});
     CHECK(app.saving && store.count == 1);
@@ -341,7 +457,7 @@ static void test_session(FodderPack *pack)
     fodder_session_action(&app, FODDER_NEXT);
     CHECK(app.selection == 0);
     fodder_session_action(&app, FODDER_SECOND_UPGRADE);
-    CHECK(app.screen == FODDER_CAMP && app.profile.rank[1] == 1);
+    CHECK(app.screen == FODDER_CAMP && app.profile.rank[1] == 2);
     CHECK(app.profile.variant == 1 && app.battle.effects.block_cost < 1.0f);
     fodder_session_saved(&app, true);
     CHECK(store.count == 3);
@@ -365,6 +481,7 @@ int main(int argc, char **argv)
     test_pack(&pack);
     test_geometry(&pack);
     test_battle(&pack);
+    test_melee(&pack);
     test_session(&pack);
     fodder_pack_close(&pack);
     remove(fixture);

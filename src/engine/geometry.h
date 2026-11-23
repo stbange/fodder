@@ -12,6 +12,7 @@ typedef struct {
     FodderVec position;
     float u, v;
     FodderColor color;
+    float part;
 } FodderVertex;
 
 typedef struct {

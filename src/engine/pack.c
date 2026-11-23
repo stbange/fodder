@@ -296,6 +296,15 @@ static bool read_variants(lua_State *lua, FodderPack *pack)
         valid &= label(lua, 3, "name", v->name, sizeof(v->name));
         valid &= label(lua, 3, "hint", v->hint, sizeof(v->hint));
         v->seconds = (unsigned)number(lua, 3, "seconds", 1, 480, &valid);
+        field(lua, 3, "flankers");
+        if (!lua_isnil(lua, -1)) {
+            lua_Integer count = lua_tointeger(lua, -1);
+            if (lua_isinteger(lua, -1) && count >= 0 && count <= FODDER_MAX_FLANKERS)
+                v->flankers = (unsigned)count;
+            else
+                valid = false;
+        }
+        lua_pop(lua, 1);
         v->rout_fraction = number(lua, 3, "rout", 0, 0.95f, &valid);
         v->enemy_speed = number(lua, 3, "enemy_speed", 0, 7, &valid);
         v->ally_speed = number(lua, 3, "ally_speed", 0, 7, &valid);

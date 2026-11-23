@@ -44,7 +44,7 @@ function fixture(options = {}) {
   win.requestAnimationFrame = (callback) => frames.push(callback);
   win.navigator = {};
   win.devicePixelRatio = 1;
-  const table = Array(18).fill(0);
+  const table = Array(19).fill(0);
   const writes = [], commands = [], restored = [], renders = [], loaded = [];
   let progress = "";
   let customTitle = "The Broken Ford";
@@ -58,7 +58,8 @@ function fixture(options = {}) {
       commands.push(action);
       if (table[0] === 3 && action >= 4) {
         table[0] = 0;
-        table[10 + (action - 4)] += 1;
+        table[10 + (action - 4)] += table[18] || 1;
+        table[18] = 0;
       } else if (action === 0 && [0, 2, 4].includes(table[0])) {
         table[0] = 1;
       } else if (action === 1 && table[0] === 1) {
@@ -216,11 +217,15 @@ test("browser shell renders saving, rewards, defeat, and personal records", asyn
   ready.setStat(0, 3);
   ready.setStat(8, 12);
   ready.setStat(13, 2);
+  ready.setStat(18, 2);
   ready.frame();
   match(n("result-description").textContent, /12 enemy kills.*Cinder Host won/);
   equal(n("rewards").children.length, 3);
+  match(n("result-description").textContent, /extra rank/);
+  match(n("rewards").children[0].children[0].textContent, /Rank 2/);
   n("rewards").children[0].onclick();
   equal(n("game").dataset.screen, "camp");
+  equal(ready.mod._fodder_stat(10), 2);
   ready.setStat(0, 4);
   ready.setStat(5, 12);
   ready.setStat(7, 2);

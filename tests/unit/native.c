@@ -133,16 +133,26 @@ static void test_game_components(const char *assets)
     CHECK(SDL_PushEvent(&event));
     events();
     step(0.03);
+    event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    event.button.button = SDL_BUTTON_LEFT;
+    CHECK(SDL_PushEvent(&event));
+    events();
+    CHECK(app.input.attack_pressed);
     app.input.attack = true;
     app.session.battle.soldiers[1].x = 180;
     app.session.battle.soldiers[2].health = 0;
     app.session.battle.soldiers[3].windup = 0.2f;
+    app.session.battle.soldiers[3].windup_duration = 0.4f;
+    app.session.battle.soldiers[3].stagger = 0.3f;
+    app.session.battle.counter_time = 0.5f;
     app.session.battle.hurt = 0.6f;
     step(0.036);
     flat_frame(960, 540, false);
     app.input.attack = false;
     app.input.block = true;
     step(0.1);
+    step(0.15);
+    CHECK(app.session.battle.soldiers[0].recovery > 0.0f);
 
     FodderMatrix view = fodder_identity();
     float matrices[36] = {0};

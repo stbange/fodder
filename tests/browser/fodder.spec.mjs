@@ -26,6 +26,38 @@ test("renders the WebAssembly game and deploys", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("winds up, sweeps the first-person sword, and returns to guard", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.swordPositions = [];
+    const models = new WeakSet();
+    const prototype = WebGL2RenderingContext.prototype;
+    const getUniform = prototype.getUniformLocation;
+    const setMatrix = prototype.uniformMatrix4fv;
+    prototype.getUniformLocation = function (program, name) {
+      const location = getUniform.call(this, program, name);
+      if (location && name === "uModel") models.add(location);
+      return location;
+    };
+    prototype.uniformMatrix4fv = function (location, transpose, matrix, offset = 0) {
+      if (models.has(location)) {
+        const [x, y, z] = matrix.subarray(offset + 12, offset + 15);
+        if (y > -0.45 && z < -0.65 && z > -1.05) window.swordPositions.push(x);
+      }
+      return setMatrix.apply(this, arguments);
+    };
+  });
+  await camp(page);
+  await page.getByRole("button", { name: "Deploy", exact: true }).click();
+  const positions = () => page.evaluate(() => window.swordPositions);
+  await expect.poll(async () => Math.abs((await positions()).at(-1) - 0.43)).toBeLessThan(0.01);
+  await page.mouse.move(560, 360);
+  await page.mouse.down();
+  await expect.poll(async () => Math.max(...await positions())).toBeGreaterThan(0.57);
+  await expect.poll(async () => Math.min(...await positions())).toBeLessThan(-0.15);
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await positions()).at(-1) - 0.43)).toBeLessThan(0.01);
+});
+
 test("selects mobile controls from real Chromium touch events", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["iPhone 13"], viewport: { width: 844, height: 390 } });
   const page = await context.newPage();

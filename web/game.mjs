@@ -46,8 +46,8 @@ export function mountFodder({
       ? "Left pad Move · Right side Look · Strike and Block"
       : "WASD Move · Mouse Look · Left Strike · Right Block";
     $("control-help").textContent = enabled
-      ? "Move with the left pad and drag on the right to look. Hold Strike or Block. Tap the pause button to take a break."
-      : "WASD to move. Mouse to look. Left click to strike and right click to block. Escape to pause.";
+      ? "Move with the left pad and drag on the right to look. Tap Strike for one swing. Tap or hold Block just before impact, then release and strike to counter."
+      : "WASD to move. Mouse to look. Click left to strike. Raise your block with right click just before impact, then release and strike to counter. Escape to pause.";
     if (enabled && document.pointerLockElement) document.exitPointerLock();
   }
 
@@ -103,7 +103,9 @@ export function mountFodder({
       $("result-title").textContent = "You survived";
       $("result-tag").textContent = reason || "Survivor reward";
       const outcome = winner === 1 ? " The Reed Guard won." : winner === 2 ? " The Cinder Host won." : "";
-      $("result-description").textContent = `${mod._fodder_stat(8)} enemy kills.${outcome} Choose a permanent upgrade.`;
+      const ranks = mod._fodder_stat(18) || 1;
+      const bonus = ranks > 1 ? " Two deeds earned you an extra rank." : "";
+      $("result-description").textContent = `${mod._fodder_stat(8)} enemy kills.${outcome}${bonus} Choose a permanent upgrade.`;
       rewards.hidden = false;
       continueButton.hidden = true;
       rewards.replaceChildren();
@@ -114,7 +116,7 @@ export function mountFodder({
         button.setAttribute("aria-current", String(selected === i));
         const name = document.createElement("strong");
         const description = document.createElement("span");
-        name.textContent = `${label(3, i)} · Rank ${mod._fodder_stat(10 + i) + 1}`;
+        name.textContent = `${label(3, i)} · Rank ${mod._fodder_stat(10 + i) + ranks}`;
         description.textContent = label(4, i);
         button.append(name, description);
         button.onclick = () => command(ACTION.first + i);

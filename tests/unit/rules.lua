@@ -3,6 +3,7 @@ assert(design.arena.name == "The Broken Ford")
 assert(#design.battles == 3 and #design.upgrades == 3)
 assert(#design.arena.obstacles > 4)
 assert(design.battles[1].enemy_damage < design.battles[3].enemy_damage)
+assert(design.battles[1].flankers > 0 and design.battles[1].flankers < design.battles[3].flankers)
 
 local naked = design.effects(0, 0, 0)
 local earned = design.effects(1, 1, 1)

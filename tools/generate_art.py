@@ -17,12 +17,13 @@ PACK = ROOT / "packs" / "fantasy"
 class Mesh:
     def __init__(self):
         self.vertices = []
+        self.part = 0
 
     def face(self, points, color, shade=1.0):
         dye = tuple(component * shade for component in color[:3]) + (color[3],)
         for index in range(1, len(points) - 1):
             for point in (points[0], points[index], points[index + 1]):
-                self.vertices.append((*point, *dye))
+                self.vertices.append((*point, *dye, self.part))
 
     def box(self, start, end, color):
         x, y, z = start
@@ -44,9 +45,12 @@ class Mesh:
             j = (i + 1) % len(points)
             self.face([points[i], points[j], rear[j], rear[i]], color, .69)
 
-    def save(self, name):
-        text = [f"FODDERM1 {len(self.vertices)}"]
-        text.extend(" ".join(f"{value:.4f}" for value in row) for row in self.vertices)
+    def save(self, name, animated=False):
+        format_version = 2 if animated else 1
+        text = [f"FODDERM{format_version} {len(self.vertices)}"]
+        for *vertex, part in self.vertices:
+            attributes = " ".join(f"{value:.4f}" for value in vertex)
+            text.append(f"{attributes} {part}" if animated else attributes)
         (PACK / "models" / f"{name}.mesh").write_text("\n".join(text) + "\n", encoding="ascii")
 
 
@@ -101,16 +105,20 @@ def models():
     for side in [-1, 1]:
         x = side * .29
         levy.box((x-.104,1.14,-.114),(x+.104,1.33,.114), STEEL)
+        levy.part = 1 if side > 0 else 2
         levy.box((x-.064,.91,-.075),(x+.064,1.17,.083), CLOTH)
+        levy.part = 0
     levy.box((-.111,1.29,-.09),(.111,1.50,.092), LEATHER)
     levy.box((-.14,1.43,-.15),(.14,1.67,.12), STEEL)
     levy.box((-.112,1.64,-.109),(.112,1.76,.088), MAIL)
     levy.box((-.118,1.538,-.16),(.118,1.583,-.143), DARK)
     levy.box((-.022,1.44,-.17),(.022,1.646,-.148), GILT)
     levy.box((-.062,1.74,-.057),(.065,1.84,.12), CLOTH)
+    levy.part = 1
     sword(levy, .39, .99, -.20, .63)
+    levy.part = 2
     shield(levy, -.31, .96, -.16, .72)
-    levy.save("levy")
+    levy.save("levy", animated=True)
 
 
 def tga(path, width, height, pixels):

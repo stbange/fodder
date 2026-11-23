@@ -205,6 +205,7 @@ static void step(double delta)
     FodderScreen before = app.session.screen;
     fodder_session_frame(&app.session, delta, app.input);
     app.input.look_x = app.input.look_y = 0;
+    app.input.attack_pressed = false;
     if (before != app.session.screen) {
         app.input = (FodderInput){0};
 #ifndef __EMSCRIPTEN__
@@ -260,13 +261,16 @@ EMSCRIPTEN_KEEPALIVE void fodder_command(int command)
 EMSCRIPTEN_KEEPALIVE void fodder_control(float move, float strafe, float look_x, float look_y,
                                          int attack, int block)
 {
-    app.input = (FodderInput){move, strafe, look_x, look_y, attack != 0, block != 0};
+    app.input = (FodderInput){
+        .move = move, .strafe = strafe, .look_x = look_x, .look_y = look_y,
+        .attack = attack != 0, .block = block != 0
+    };
 }
 
 EMSCRIPTEN_KEEPALIVE void fodder_clear_input(void)
 {
     app.input = (FodderInput){0};
-    fodder_session_clear_look(&app.session);
+    fodder_session_clear_input(&app.session);
 }
 
 EMSCRIPTEN_KEEPALIVE void fodder_flat(double delta, int width, int height)
@@ -347,6 +351,7 @@ EMSCRIPTEN_KEEPALIVE unsigned fodder_stat(int index)
     case 15: return (unsigned)s->battle.soldiers[0].health;
     case 16: return s->selection;
     case 17: return s->battle.tick;
+    case 18: return fodder_profile_reward(&s->profile);
     default: return 0;
     }
 }
@@ -403,6 +408,10 @@ static void events(void)
             break;
         case SDL_EVENT_KEY_DOWN:
             keyboard(event.key);
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (event.button.button == SDL_BUTTON_LEFT && app.session.screen == FODDER_FIGHT)
+                app.input.attack_pressed = true;
             break;
         case SDL_EVENT_MOUSE_MOTION:
             if (app.session.screen == FODDER_FIGHT) {

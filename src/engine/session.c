@@ -10,7 +10,7 @@ static void deploy(FodderSession *session)
     fodder_battle_start(&session->battle, &session->pack->arena, variant, effects,
                         fodder_profile_seed(&session->profile), FODDER_ARMY_SIZE);
     session->time_buffer = 0.0;
-    fodder_session_clear_look(session);
+    fodder_session_clear_input(session);
 }
 
 void fodder_session_open(FodderSession *session, const FodderPack *pack, FodderProfile profile,
@@ -59,10 +59,15 @@ static void claim(FodderSession *session, unsigned upgrade)
     }
 }
 
-void fodder_session_clear_look(FodderSession *session)
+void fodder_session_clear_input(FodderSession *session)
 {
     session->queued_x = 0.0f;
     session->queued_y = 0.0f;
+    session->attack_down = false;
+    session->queued_attack = false;
+    session->battle.attack_held = false;
+    session->battle.block_held = false;
+    session->battle.guard_window = 0.0f;
 }
 
 void fodder_session_action(FodderSession *session, FodderAction action)
@@ -74,7 +79,7 @@ void fodder_session_action(FodderSession *session, FodderAction action)
             save_profile(session);
         return;
     }
-    fodder_session_clear_look(session);
+    fodder_session_clear_input(session);
     switch (session->screen) {
     case FODDER_CAMP:
     case FODDER_RESULT:
@@ -114,15 +119,19 @@ void fodder_session_frame(FodderSession *session, double elapsed, FodderInput in
     session->time_buffer += fmin(0.15, fmax(elapsed, 0.0));
     session->queued_x += input.look_x;
     session->queued_y += input.look_y;
+    session->queued_attack |= input.attack_pressed || (input.attack && !session->attack_down);
+    session->attack_down = input.attack;
     while (session->time_buffer >= tick_time) {
         session->time_buffer -= tick_time;
         input.look_x = session->queued_x;
         input.look_y = session->queued_y;
-        fodder_session_clear_look(session);
+        input.attack_pressed = session->queued_attack;
+        session->queued_x = session->queued_y = 0.0f;
+        session->queued_attack = false;
         fodder_battle_tick(&session->battle, input);
         if (session->battle.outcome != FODDER_ACTIVE) {
             if (fodder_profile_result(&session->pending_profile, &session->profile,
-                                      session->battle.outcome, session->battle.kills)) {
+                                      session->battle.outcome, session->battle.kills, session->battle.deeds)) {
                 session->after_save = session->battle.outcome == FODDER_SURVIVED ?
                                       FODDER_REWARD : FODDER_RESULT;
                 save_profile(session);

@@ -90,8 +90,8 @@ bool fodder_quad(FodderMesh *mesh, FodderVec a, FodderVec b, FodderVec c, Fodder
                  FodderColor color)
 {
     const FodderVertex vertices[] = {
-        {a, 0, 0, color}, {b, 1, 0, color}, {c, 1, 1, color},
-        {a, 0, 0, color}, {c, 1, 1, color}, {d, 0, 1, color}
+        {a, 0, 0, color, 0}, {b, 1, 0, color, 0}, {c, 1, 1, color, 0},
+        {a, 0, 0, color, 0}, {c, 1, 1, color, 0}, {d, 0, 1, color, 0}
     };
     return append(mesh, vertices, 6);
 }
@@ -108,9 +108,11 @@ bool fodder_mesh_read(FodderMesh *mesh, const char *path)
     if (!file)
         return false;
     unsigned size;
-    char magic[20];
-    bool valid = fscanf(file, "%19s %u", magic, &size) == 2 &&
-                 strcmp(magic, "FODDERM1") == 0 && size > 0 && size <= 18000 && size % 3 == 0;
+    char magic[20] = {0};
+    bool header = fscanf(file, "%19s %u", magic, &size) == 2;
+    bool animated = strcmp(magic, "FODDERM2") == 0;
+    bool valid = header && (animated || strcmp(magic, "FODDERM1") == 0) &&
+                 size > 0 && size <= 18000 && size % 3 == 0;
     for (unsigned i = 0; valid && i < size; ++i) {
         FodderVertex vertex = {0};
         FodderVec *p = &vertex.position;
@@ -119,6 +121,12 @@ bool fodder_mesh_read(FodderMesh *mesh, const char *path)
                 fabsf(p->x) <= 100 && fabsf(p->y) <= 100 && fabsf(p->z) <= 100 &&
                 c->r >= 0 && c->r <= 1 && c->g >= 0 && c->g <= 1 &&
                 c->b >= 0 && c->b <= 1 && c->a >= 0 && c->a <= 1;
+        if (valid && animated) {
+            unsigned part;
+            valid = fscanf(file, "%u", &part) == 1 && part <= 2;
+            if (valid)
+                vertex.part = (float)part;
+        }
         if (valid)
             valid = append(mesh, &vertex, 1);
     }
