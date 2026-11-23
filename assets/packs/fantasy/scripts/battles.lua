@@ -25,7 +25,7 @@ local function battle(name, hint, seconds, fog, ally_lane, enemy_lane, hostile)
         name = name, hint = hint, seconds = seconds, rout = 0.29, fog = fog,
         ally_lane = ally_lane, enemy_lane = enemy_lane,
         ally_speed = 1.60, enemy_speed = 1.63 + hostile * 0.14,
-        ally_damage = 18, enemy_damage = 15 + hostile * 4, player_damage = 49
+        ally_damage = 6.4, enemy_damage = 5.5 + hostile * 1.2, player_damage = 49
     }
 end
 

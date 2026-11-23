@@ -137,7 +137,7 @@ export function mountFodder({
     const dt = lastFrame === undefined ? 0 : (timestamp - lastFrame) / 1000;
     lastFrame = timestamp;
     const bounds = canvas.getBoundingClientRect();
-    const scale = Math.min(window.devicePixelRatio || 1, 540 / Math.max(1, bounds.height), 1280 / Math.max(1, bounds.width));
+    const scale = Math.min(window.devicePixelRatio || 1, 450 / Math.max(1, bounds.height), 960 / Math.max(1, bounds.width));
     const width = Math.max(1, Math.round(bounds.width * scale)), height = Math.max(1, Math.round(bounds.height * scale));
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;

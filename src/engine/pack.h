@@ -3,6 +3,7 @@
 
 #include "battle.h"
 #include <stddef.h>
+#include <stdio.h>
 
 enum { FODDER_PATH = 768, FODDER_FILE = 160, FODDER_PACK_ID = 33, FODDER_ERROR = 256 };
 
@@ -33,6 +34,7 @@ typedef struct {
 bool fodder_valid_id(const char *id);
 bool fodder_valid_path(const char *path);
 bool fodder_path_join(char *destination, size_t length, const char *root, const char *file);
+FILE *fodder_open_read(const char *path);
 char *fodder_read(const char *path, size_t limit, size_t *length);
 bool fodder_pack_open(FodderPack *pack, const char *root, char error[FODDER_ERROR]);
 void fodder_pack_close(FodderPack *pack);

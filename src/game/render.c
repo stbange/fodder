@@ -418,14 +418,18 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
     draw(r, &scene->world, 0, 0, identity, &neutral, 1);
     draw(r, &scene->pennants, 2, scene->banner, identity, &neutral, 1);
     unsigned nearby_count = 0, distant_count = 0;
-    float sx = sinf(yaw), cz = cosf(yaw);
+    const float *clip = camera.data;
     for (unsigned i = 1; i < battle->count; ++i) {
         const FodderSoldier *unit = &battle->soldiers[i];
         float dx = unit->x - eye.x, dz = unit->z - eye.z;
         float length = dx * dx + dz * dz;
-        if (length > 18500 || sx * dx - cz * dz < -8)
+        if (length > 18500)
             continue;
         float y = fodder_ground(battle->arena, unit->x, unit->z);
+        float clip_x = clip[0] * unit->x + clip[4] * (y + 0.9f) + clip[8] * unit->z + clip[12];
+        float clip_w = clip[3] * unit->x + clip[7] * (y + 0.9f) + clip[11] * unit->z + clip[15];
+        if (clip_w < -1.5f || fabsf(clip_x) > clip_w + 4.5f)
+            continue;
         float bob = 0.047f * sinf((float)battle->tick * 0.14f + (float)i * 2.513f);
         if (fabsf(unit->vx) + fabsf(unit->vz) > 0.1f)
             y += bob;
@@ -440,7 +444,7 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
             dye.a = -1;
         }
         Instance instance = {unit->x, y, unit->z, unit->yaw, dye};
-        if (length < 26 * 26 || unit->health <= 0) {
+        if (length < 19 * 19 || unit->health <= 0) {
             r->nearby[nearby_count++] = instance;
         } else {
             instance.yaw = yaw;

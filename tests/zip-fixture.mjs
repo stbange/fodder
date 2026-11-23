@@ -56,7 +56,7 @@ export function quickPack({ id = "quick-ford", title = "Quick Ford test pack", i
   const entries = Object.values(manifest.files).map((path) => [path, readFileSync(resolve(root, path))]);
   entries[0][1] = invalid ? "this is invalid Lua" : entries[0][1].toString()
     .replaceAll(/seconds = seconds, rout = 0.29/g, "seconds = 2, rout = 0.29")
-    .replaceAll("enemy_damage = 15 + hostile * 4", "enemy_damage = 0")
+    .replaceAll("enemy_damage = 5.5 + hostile * 1.2", "enemy_damage = 0")
     .replace("Hold the Ford", "The quick crossing");
   return [["pack.json", JSON.stringify(manifest)], ...entries];
 }

@@ -239,11 +239,12 @@ static void test_battle(const FodderPack *pack)
     fodder_battle_start(&battle, &arena, &variant, effects, 0, FODDER_ARMY_SIZE);
     CHECK(battle.count == 1000 && battle.alive[0] == 500 && battle.alive[1] == 500);
     CHECK(battle.soldiers[499].side == 0 && battle.soldiers[500].side == 1);
-    for (unsigned i = 0; i < 850; ++i)
+    for (unsigned i = 0; i < 3050; ++i)
         fodder_battle_tick(&battle, (FodderInput){0});
     CHECK(battle.alive[0] < 500 && battle.alive[1] < 500);
 
     variant.rout_fraction = 0.5f;
+    variant.enemy_damage = 15.0f / 2.65f;
     fodder_battle_start(&battle, &arena, &variant, effects, 42, 2);
     settle_near(&battle, true);
     fodder_battle_tick(&battle, (FodderInput){.block = true});
@@ -251,7 +252,7 @@ static void test_battle(const FodderPack *pack)
     battle.soldiers[0].health = 40;
     settle_near(&battle, false);
     fodder_battle_tick(&battle, (FodderInput){.block = true});
-    CHECK(battle.dressed && battle.soldiers[0].health == 35);
+    CHECK(battle.dressed && close_float(battle.soldiers[0].health, 35));
     settle_near(&battle, true);
     battle.soldiers[2].windup = 0;
     battle.soldiers[2].health = 1;

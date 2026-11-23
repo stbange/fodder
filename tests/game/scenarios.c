@@ -41,12 +41,19 @@ int main(int argc, char **argv)
     FodderBattle battle;
     FodderEffects base = fodder_pack_effects(&pack, (unsigned[]){0, 0, 0});
     clock_t started = clock();
-    for (unsigned seed = 15; seed < 18; ++seed) {
-        fodder_battle_start(&battle, &pack.arena, &pack.variants[seed - 15], base, seed, 500);
+    for (unsigned index = 0; index < pack.variant_count; ++index) {
+        const FodderVariant *variant = &pack.variants[index];
+        fodder_battle_start(&battle, &pack.arena, variant, base, 933 + index, FODDER_ARMY_SIZE);
         float ally_origin = battle.soldiers[49].z;
-        for (unsigned tick = 0; tick < 1700 && battle.outcome == FODDER_ACTIVE; ++tick)
-            fodder_battle_tick(&battle, (FodderInput){.look_x = tick == 0 ? 3.14f : 0});
-        EXPECT(battle.tick > 100);
+        unsigned limit = FODDER_TICKS_PER_SECOND * variant->seconds;
+        for (unsigned tick = 0; tick < limit && battle.outcome == FODDER_ACTIVE; ++tick) {
+            FodderInput input = {.move = tick < 370 ? -1.0f : 0, .look_x = tick == 370 ? 3.14f : 0};
+            fodder_battle_tick(&battle, input);
+        }
+        EXPECT(battle.tick > 100 && battle.outcome == FODDER_SURVIVED);
+        EXPECT(battle.end == FODDER_ROUT || battle.end == FODDER_HORN);
+        printf("%s reached its battle end at %.1f simulated seconds.\n",
+               variant->name, (double)battle.tick / FODDER_TICKS_PER_SECOND);
         EXPECT(battle.alive[0] < 500 && battle.alive[1] < 500);
         EXPECT(battle.soldiers[49].z != ally_origin);
         unsigned counts[2] = {0};
@@ -56,8 +63,8 @@ int main(int argc, char **argv)
         }
         EXPECT(counts[0] == battle.alive[0] && counts[1] == battle.alive[1]);
     }
-    printf("Three seeded 1,000-soldier simulations ran in %.3f CPU seconds.\n",
-           (double)(clock() - started) / CLOCKS_PER_SEC);
+    printf("%u complete 1,000-soldier simulations ran in %.3f CPU seconds.\n",
+           pack.variant_count, (double)(clock() - started) / CLOCKS_PER_SEC);
 
     Save save = {0};
     FodderProfile reload = {0};

@@ -222,6 +222,7 @@ static void hit(FodderBattle *battle, FodderSoldier *soldier)
         return;
     float damage = soldier->side == 0 ? battle->variant.ally_damage : battle->variant.enemy_damage;
     if (soldier->target == 0) {
+        damage *= 2.65f;
         float cost = 0.17f * battle->effects.block_cost;
         if (battle->guarding && battle->stamina >= cost && facing(target, soldier) > 0.0f) {
             battle->stamina -= cost;

@@ -71,7 +71,7 @@ test("installs a ZIP, restores a pending reward, and saves its upgrade", async (
   await expect(page.getByRole("button", { name: /Field Dressing · Rank 2/ })).toBeVisible({ timeout: 18000 });
 });
 
-test("renders two WebXR views and returns to flat play on session exit", async ({ page }) => {
+test("plays and claims a reward across two WebXR views, then returns to flat play", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -119,9 +119,23 @@ test("renders two WebXR views and returns to flat play on session exit", async (
     }});
   });
   await camp(page);
+  await page.getByRole("button", { name: "Content packs" }).click();
+  await upload(page, zip(quickPack({ id: "xr-ford" })));
+  await expect(page.getByRole("heading", { name: "The quick crossing" })).toBeVisible();
   await page.getByRole("button", { name: "Enter VR" }).click();
-  await expect.poll(() => page.evaluate(() => window.fodderTestXR.views)).toBeGreaterThan(2);
-  await page.evaluate(() => { window.fodderTestXR.buttons[0].pressed = true; });
+  const views = () => page.evaluate(() => window.fodderTestXR.views);
+  const trigger = (pressed) => page.evaluate((pressed) => { window.fodderTestXR.buttons[0].pressed = pressed; }, pressed);
+  await expect.poll(views).toBeGreaterThan(2);
+  await trigger(true);
+  await expect(page.locator("#game")).toHaveAttribute("data-screen", "fight");
+  await trigger(false);
+  await expect(page.locator("#game")).toHaveAttribute("data-screen", "reward", { timeout: 18000 });
+  await trigger(true);
+  await expect(page.locator("#game")).toHaveAttribute("data-screen", "camp");
+  await trigger(false);
+  const frame = await views();
+  await expect.poll(views).toBeGreaterThan(frame + 1);
+  await trigger(true);
   await expect(page.locator("#game")).toHaveAttribute("data-screen", "fight");
   await page.evaluate(() => window.fodderTestXR.xrSession.end());
   await expect(page.getByRole("button", { name: "Resume battle" })).toBeVisible();

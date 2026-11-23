@@ -9,6 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 static const char *const file_keys[] = {
     "script", "soldier", "sword", "shield", "sprite", "banner", "strike", "horn", "crowd"
 };
@@ -61,9 +66,21 @@ bool fodder_path_join(char *destination, size_t length, const char *root, const 
     return used >= 0 && (size_t)used < length;
 }
 
+FILE *fodder_open_read(const char *path)
+{
+#ifdef _WIN32
+    wchar_t wide[FODDER_PATH];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, FODDER_PATH) == 0)
+        return NULL;
+    return _wfopen(wide, L"rb");
+#else
+    return fopen(path, "rb");
+#endif
+}
+
 char *fodder_read(const char *path, size_t limit, size_t *length)
 {
-    FILE *stream = fopen(path, "rb");
+    FILE *stream = fodder_open_read(path);
     if (!stream)
         return NULL;
     char *data = NULL;

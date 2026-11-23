@@ -104,7 +104,7 @@ void fodder_mesh_free(FodderMesh *mesh)
 
 bool fodder_mesh_read(FodderMesh *mesh, const char *path)
 {
-    FILE *file = fopen(path, "rb");
+    FILE *file = fodder_open_read(path);
     if (!file)
         return false;
     unsigned size;
@@ -264,7 +264,7 @@ bool fodder_banners(FodderMesh *mesh, const FodderArena *arena)
 
 bool fodder_font_read(unsigned char (*font)[7], const char *path)
 {
-    FILE *file = fopen(path, "rb");
+    FILE *file = fodder_open_read(path);
     if (!file)
         return false;
     bool valid = true;
