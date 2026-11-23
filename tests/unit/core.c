@@ -263,6 +263,12 @@ static void test_battle(const FodderPack *pack)
     fodder_battle_tick(&battle, (FodderInput){0});
     CHECK(battle.tick == fin);
 
+    fodder_battle_start(&battle, &arena, &variant, effects, 8, 2);
+    battle.soldiers[1].health = 0;
+    battle.alive[0] = 1;
+    fodder_battle_tick(&battle, (FodderInput){0});
+    CHECK(battle.outcome == FODDER_SURVIVED && battle.end == FODDER_ROUT && battle.winner == 1);
+
     variant.seconds = 1;
     variant.rout_fraction = 0;
     fodder_battle_start(&battle, &arena, &variant, effects, 1, 2);

@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #ifndef __EMSCRIPTEN__
 #include <SDL3/SDL_main.h>
+#include "profile_store.h"
 #else
 #include <emscripten.h>
 #endif
@@ -55,18 +56,6 @@ EM_JS(void, browser_save, (const char *id, const char *text, unsigned revision),
 EM_JS(void, browser_framebuffer, (int xr), {
     if (GLctx) GLctx.bindFramebuffer(GLctx.FRAMEBUFFER, xr ? Module.xrFramebuffer : null);
 })
-#else
-static bool profile_path(char path[FODDER_PATH], const char *id, const char *suffix)
-{
-    char *pref = SDL_GetPrefPath("Fodder", "Fodder");
-    if (!pref)
-        return false;
-    char filename[80];
-    snprintf(filename, sizeof(filename), "%s.%s", id, suffix);
-    bool joined = fodder_path_join(path, FODDER_PATH, pref, filename);
-    SDL_free(pref);
-    return joined;
-}
 #endif
 
 static FodderWrite write_profile(void *data, const FodderProfile *before, const FodderProfile *after)
@@ -79,29 +68,8 @@ static FodderWrite write_profile(void *data, const FodderProfile *before, const 
     browser_save(game->pack->id, text, before->revision);
     return FODDER_WRITE_PENDING;
 #else
-    char path[FODDER_PATH], temporary[FODDER_PATH];
-    if (!profile_path(path, game->pack->id, "profile") ||
-        !profile_path(temporary, game->pack->id, "tmp"))
-        return FODDER_WRITE_FAILED;
-    size_t bytes;
-    char *current = fodder_read(path, FODDER_PROFILE_TEXT - 1, &bytes);
-    if (current) {
-        FodderProfile profile;
-        bool matches = fodder_profile_decode(&profile, current, game->pack->variant_count) &&
-                       profile.revision == before->revision;
-        free(current);
-        if (!matches)
-            return FODDER_WRITE_FAILED;
-    } else if (before->revision) {
-        return FODDER_WRITE_FAILED;
-    }
-    if (!SDL_SaveFile(temporary, text, strlen(text)))
-        return FODDER_WRITE_FAILED;
-    if (!SDL_RenamePath(temporary, path)) {
-        SDL_RemovePath(temporary);
-        return FODDER_WRITE_FAILED;
-    }
-    return FODDER_WRITE_COMPLETE;
+    return fodder_profile_write_file(game->pack->id, game->pack->variant_count, before->revision, text) ?
+           FODDER_WRITE_COMPLETE : FODDER_WRITE_FAILED;
 #endif
 }
 
@@ -111,17 +79,7 @@ static bool read_profile(const FodderPack *pack, const char *supplied, FodderPro
     return !supplied[0] || fodder_profile_decode(profile, supplied, pack->variant_count);
 #else
     (void)supplied;
-    char path[FODDER_PATH];
-    if (!profile_path(path, pack->id, "profile"))
-        return false;
-    SDL_PathInfo info;
-    if (!SDL_GetPathInfo(path, &info))
-        return true;
-    size_t length;
-    char *text = fodder_read(path, FODDER_PROFILE_TEXT - 1, &length);
-    bool valid = text && fodder_profile_decode(profile, text, pack->variant_count);
-    free(text);
-    return valid;
+    return fodder_profile_read_file(pack->id, pack->variant_count, profile);
 #endif
 }
 
@@ -315,6 +273,15 @@ EMSCRIPTEN_KEEPALIVE void fodder_flat(double delta, int width, int height)
     step(delta);
     browser_framebuffer(0);
     flat_frame(width, height, true);
+}
+
+EMSCRIPTEN_KEEPALIVE int fodder_restore_graphics(void)
+{
+    fodder_scene_free(app.renderer, app.scene);
+    fodder_renderer_close(app.renderer);
+    app.renderer = fodder_renderer_open(app.assets, app.error);
+    app.scene = app.renderer ? fodder_scene_load(app.renderer, app.pack, app.error) : NULL;
+    return app.scene != NULL;
 }
 
 EMSCRIPTEN_KEEPALIVE void fodder_xr_step(double delta, float yaw)

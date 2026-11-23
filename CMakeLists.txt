@@ -71,6 +71,9 @@ if(FODDER_BUILD_GAME)
     URL_HASH SHA256=66c374ee7f786abcd8592d18fc5b18b1e3f1c67e923867eee5f9c503cb253afd)
   FetchContent_MakeAvailable(fodder_sdl)
   add_executable(fodder src/game/main.c src/game/render.c src/game/sound.c)
+  if(NOT EMSCRIPTEN)
+    target_sources(fodder PRIVATE src/game/profile_store.c)
+  endif()
   target_link_libraries(fodder PRIVATE fodder_engine SDL3::SDL3-static)
   fodder_warnings(fodder)
   set_target_properties(fodder PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/play")
@@ -130,5 +133,18 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
     add_test(NAME native_launch COMMAND fodder --smoke)
     set_tests_properties(native_launch PROPERTIES
       WORKING_DIRECTORY "$<TARGET_FILE_DIR:fodder>" LABELS display TIMEOUT 30)
+    if(FODDER_COVERAGE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      set_tests_properties(native_launch PROPERTIES LABELS "unit;display"
+        ENVIRONMENT "XDG_DATA_HOME=${CMAKE_BINARY_DIR}/unit-smoke;SDL_AUDIODRIVER=dummy")
+      add_executable(fodder_platform_unit tests/unit/native.c
+        src/game/profile_store.c src/game/render.c src/game/sound.c)
+      target_include_directories(fodder_platform_unit PRIVATE src/game)
+      target_link_libraries(fodder_platform_unit PRIVATE fodder_engine SDL3::SDL3-static)
+      fodder_warnings(fodder_platform_unit)
+      add_test(NAME unit_platform COMMAND fodder_platform_unit "$<TARGET_FILE_DIR:fodder>/assets")
+      set_tests_properties(unit_platform PROPERTIES LABELS "unit;display" TIMEOUT 30
+        ENVIRONMENT "XDG_DATA_HOME=${CMAKE_BINARY_DIR}/unit-data;SDL_AUDIODRIVER=dummy")
+    endif()
+
   endif()
 endif()

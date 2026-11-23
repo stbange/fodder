@@ -8,7 +8,7 @@ kill count and survival streak are recorded alongside your army's result.
 ## Play a native build
 
 Download the package for your operating system from a successful GitHub Actions
-run. Extract the full archive so `assets/` is beside the executable or
+run. Extract the platform archive inside it so `assets/` is beside the executable or
 `Fodder.app`. Press **Enter** to deploy. Move with **WASD**, look with the mouse,
 strike with the left button, and block with the right button. Press **Escape**
 to pause. Choose upgrades with **1–3** or select one with the arrow keys and
@@ -85,13 +85,15 @@ npm run spec
 npm run coverage:js
 cmake --preset coverage
 cmake --build --preset coverage
-ctest --preset coverage
+xvfb-run -a ctest --preset coverage
 npm exec -- playwright install chromium
 npm run test:browser
 ```
 
-The GitHub workflow runs the GCC and LuaCov line-coverage gates separately
-from browser and headless game scenarios. Native smoke tests exercise the
+The GitHub workflow enforces 95% executable-line unit coverage for C built on
+Linux, Lua gameplay scripts, and browser JavaScript. The platform component
+tests use OpenGL through Xvfb. Headless battle scenarios and Playwright tests
+run as separate checks. Native smoke tests exercise the
 SDL/OpenGL launch on Linux. The browser tests exercise mobile touch and a
 mock immersive session. Physical phone and Quest 3 play and performance are
 tracked as release checks in OpenSpec. [OpenSpec changes](openspec/changes/)

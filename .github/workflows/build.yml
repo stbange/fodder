@@ -29,12 +29,16 @@ jobs:
       - run: npm run spec
       - run: npm exec -- openspec validate --archived
       - run: npm run coverage:js
+      - name: Install Linux SDL/OpenGL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxinerama-dev libasound2-dev xvfb xauth
       - run: cmake --preset coverage && cmake --build --preset coverage --parallel 4
-      - run: ctest --preset coverage
+      - run: xvfb-run -a ctest --preset coverage
       - name: Measure C unit coverage
         run: >
           pipx run --spec gcovr==8.4 gcovr build/coverage
-          --root . --filter 'src/engine/'
+          --root . --filter 'src/'
           --print-summary --fail-under-line 95 --xml build/coverage/c.xml
       - name: Measure Lua unit coverage
         run: |
@@ -73,11 +77,22 @@ jobs:
         env:
           SDL_AUDIODRIVER: dummy
         run: xvfb-run -a ctest --test-dir build/native -C Release -L display --output-on-failure
+      - name: Archive native package on Linux or macOS
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/fodder-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C build/native/play .
+      - name: Archive native package on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist
+          Compress-Archive -Path build/native/play/Release/* -DestinationPath dist/fodder-Windows-${{ runner.arch }}.zip
       - uses: actions/upload-artifact@v6
         with:
           name: fodder-${{ runner.os }}-${{ runner.arch }}
-          path: build/native/play/
-          include-hidden-files: false
+          path: dist/
+          if-no-files-found: error
 
   web:
     if: github.ref == 'refs/heads/main'

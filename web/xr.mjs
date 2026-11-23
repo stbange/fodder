@@ -47,7 +47,7 @@ function pressed(gamepad, index) {
   return Boolean(gamepad?.buttons?.[index]?.pressed);
 }
 
-export function xrController({ xr, canvas, game, Framebuffer, onStart, onEnd, onError, onFrame = () => {} }) {
+export function xrController({ xr, canvas, game, Framebuffer, onStart, onEnd, onError, onFrame = () => {}, isReady = () => true }) {
   let session = null;
   let requesting = false;
   async function supported() {
@@ -87,6 +87,7 @@ export function xrController({ xr, canvas, game, Framebuffer, onStart, onEnd, on
       function frame(time, xrFrame) {
         if (session !== active) return;
         active.requestAnimationFrame(frame);
+        if (!isReady()) { previous = undefined; return; }
         const pose = xrFrame.getViewerPose(reference);
         if (!pose) return;
         const dt = previous === undefined ? 0 : (time - previous) / 1000;

@@ -18,10 +18,10 @@
     },
     {
       "name": "coverage",
-      "displayName": "GCC engine unit coverage",
+      "displayName": "GCC unit coverage",
       "inherits": "native",
       "binaryDir": "${sourceDir}/build/coverage",
-      "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "FODDER_COVERAGE": "ON", "FODDER_BUILD_GAME": "OFF"}
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "FODDER_COVERAGE": "ON"}
     }
   ],
   "buildPresets": [

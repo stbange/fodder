@@ -82,7 +82,7 @@ struct FodderRenderer {
     Drawable overlay, billboard;
     FodderMesh rectangles;
     unsigned char font[127][7];
-    Instance close[FODDER_SOLDIERS], far[FODDER_SOLDIERS];
+    Instance nearby[FODDER_SOLDIERS], distant[FODDER_SOLDIERS];
 };
 
 struct FodderScene {
@@ -417,7 +417,7 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
     gl->Uniform3f(r->haze, 0.63f, 0.54f, 0.42f);
     draw(r, &scene->world, 0, 0, identity, &neutral, 1);
     draw(r, &scene->pennants, 2, scene->banner, identity, &neutral, 1);
-    unsigned close = 0, far = 0;
+    unsigned nearby_count = 0, distant_count = 0;
     float sx = sinf(yaw), cz = cosf(yaw);
     for (unsigned i = 1; i < battle->count; ++i) {
         const FodderSoldier *unit = &battle->soldiers[i];
@@ -441,14 +441,14 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
         }
         Instance instance = {unit->x, y, unit->z, unit->yaw, dye};
         if (length < 26 * 26 || unit->health <= 0) {
-            r->close[close++] = instance;
+            r->nearby[nearby_count++] = instance;
         } else {
             instance.yaw = yaw;
-            r->far[far++] = instance;
+            r->distant[distant_count++] = instance;
         }
     }
-    draw(r, &scene->levy, 0, 0, identity, r->close, close);
-    draw(r, &r->billboard, 1, scene->sprite, identity, r->far, far);
+    draw(r, &scene->levy, 0, 0, identity, r->nearby, nearby_count);
+    draw(r, &r->billboard, 1, scene->sprite, identity, r->distant, distant_count);
 }
 
 static void equipment(FodderRenderer *r, const FodderScene *scene, const FodderSession *session,
