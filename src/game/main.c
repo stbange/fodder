@@ -240,6 +240,10 @@ EMSCRIPTEN_KEEPALIVE void fodder_save_done(int success)
 
 EMSCRIPTEN_KEEPALIVE int fodder_load_pack(const char *path, const char *id, const char *profile)
 {
+    if (!app.renderer) {
+        snprintf(app.error, sizeof(app.error), "Wait for the graphics context to recover.");
+        return 0;
+    }
     if (app.session.screen == FODDER_FIGHT || app.session.saving || app.session.save_error) {
         snprintf(app.error, sizeof(app.error), "Finish the current battle or save before changing packs.");
         return 0;
@@ -275,10 +279,18 @@ EMSCRIPTEN_KEEPALIVE void fodder_flat(double delta, int width, int height)
     flat_frame(width, height, true);
 }
 
-EMSCRIPTEN_KEEPALIVE int fodder_restore_graphics(void)
+EMSCRIPTEN_KEEPALIVE void fodder_drop_graphics(void)
 {
     fodder_scene_free(app.renderer, app.scene);
     fodder_renderer_close(app.renderer);
+    app.scene = NULL;
+    app.renderer = NULL;
+}
+
+EMSCRIPTEN_KEEPALIVE int fodder_restore_graphics(void)
+{
+    if (app.renderer)
+        return app.scene != NULL;
     app.renderer = fodder_renderer_open(app.assets, app.error);
     app.scene = app.renderer ? fodder_scene_load(app.renderer, app.pack, app.error) : NULL;
     return app.scene != NULL;

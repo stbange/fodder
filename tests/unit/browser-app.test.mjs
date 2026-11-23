@@ -67,6 +67,7 @@ function fixture(options = {}) {
     },
     _fodder_control: () => {},
     _fodder_flat: (...args) => renders.push(args),
+    _fodder_drop_graphics: () => {},
     _fodder_restore_graphics: () => { restored.push(1); return !options.restoreFailed; },
     _fodder_error: () => "The game could not load that pack",
     _fodder_save_done: (valid) => writes.push(valid),

@@ -15,3 +15,8 @@ In an immersive WebXR session the game SHALL render both eyes and accept control
 - **GIVEN** the game is rendering immersive views
 - **WHEN** the session ends
 - **THEN** the game clears held input and returns to flat browser play
+
+#### Scenario: Recover a WebGL context
+- **GIVEN** the browser loses the WebGL context during a session transition
+- **WHEN** the context is restored
+- **THEN** the game rebuilds its graphics resources and resumes drawing the current session

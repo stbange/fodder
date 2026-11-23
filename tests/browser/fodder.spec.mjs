@@ -141,3 +141,41 @@ test("plays and claims a reward across two WebXR views, then returns to flat pla
   await expect(page.getByRole("button", { name: "Resume battle" })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("resumes rendering after a WebGL context restore", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.fodderDraws = 0;
+    const prototype = WebGL2RenderingContext.prototype;
+    const draw = prototype.drawArraysInstanced;
+    prototype.drawArraysInstanced = function (...args) {
+      window.fodderDraws += 1;
+      return draw.apply(this, args);
+    };
+  });
+  const invalid = [];
+  page.on("console", (message) => {
+    if (message.text().includes("object does not belong")) invalid.push(message.text());
+  });
+  await camp(page);
+  const recovered = await page.evaluate(() => new Promise((resolve) => {
+    const canvas = document.querySelector("canvas");
+    const gl = canvas.getContext("webgl2");
+    const extension = gl.getExtension("WEBGL_lose_context");
+    if (!extension) return resolve(false);
+    const timer = setTimeout(() => resolve(false), 6000);
+    canvas.addEventListener("webglcontextlost", () => {
+      setTimeout(() => extension.restoreContext(), 150);
+    }, { once: true });
+    canvas.addEventListener("webglcontextrestored", () => {
+      clearTimeout(timer);
+      resolve(!gl.isContextLost());
+    }, { once: true });
+    extension.loseContext();
+  }));
+  expect(recovered).toBe(true);
+  const draws = await page.evaluate(() => window.fodderDraws);
+  await page.getByRole("button", { name: "Deploy", exact: true }).click();
+  await expect(page.locator("#game")).toHaveAttribute("data-screen", "fight");
+  await expect.poll(() => page.evaluate(() => window.fodderDraws)).toBeGreaterThan(draws + 4);
+  expect(invalid).toEqual([]);
+});

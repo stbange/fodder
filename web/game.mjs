@@ -26,7 +26,7 @@ export function mountFodder({
   let graphicsReady = true;
 
   function command(action) {
-    if (!mod || importing || dialog.open) return;
+    if (!mod || !graphicsReady || importing || dialog.open) return;
     const before = mod._fodder_stat(0);
     mod._fodder_command(action);
     const after = mod._fodder_stat(0);
@@ -274,12 +274,16 @@ export function mountFodder({
       event.preventDefault();
       graphicsReady = false;
       input.release();
+      mod._fodder_drop_graphics();
     });
     canvas.addEventListener("webglcontextrestored", () => {
       graphicsReady = Boolean(mod._fodder_restore_graphics());
       if (!graphicsReady) {
-        $("status").textContent = mod.UTF8ToString(mod._fodder_error());
-        if (mod._fodder_stat(0) === 1) command(ACTION.back);
+        const error = mod.UTF8ToString(mod._fodder_error());
+        if (mod._fodder_stat(0) === 1) mod._fodder_command(ACTION.back);
+        renderUi();
+        $("status").textContent = error;
+        $("result-description").textContent = error;
       }
     });
     document.addEventListener("pointerlockchange", () => {
