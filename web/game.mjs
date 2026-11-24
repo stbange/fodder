@@ -46,8 +46,8 @@ export function mountFodder({
       ? "Left pad Move · Right side Look · Strike and Block"
       : "WASD Move · Mouse Look · Left Strike · Right Block";
     $("control-help").textContent = enabled
-      ? "Move with the left pad and drag on the right to look. Tap Strike for one swing. Tap or hold Block just before impact, then release and strike to counter."
-      : "WASD to move. Mouse to look. Click left to strike. Raise your block with right click just before impact, then release and strike to counter. Escape to pause.";
+      ? "Move with the left pad and drag on the right to look. Tap Strike for one swing. Sidestep overhead attacks or press Block just before impact. Release block and strike the highlighted attacker to counter."
+      : "WASD to move. Mouse to look. Click left to strike. Sidestep overhead attacks or right-click just before impact. Release block and strike the highlighted attacker to counter. Escape to pause.";
     if (enabled && document.pointerLockElement) document.exitPointerLock();
   }
 

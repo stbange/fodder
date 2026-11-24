@@ -20,9 +20,15 @@ test("manifest paths and ZIP packing are portable and bounded", async () => {
     const bytes = packed([["scripts/", ""], ...quickPack()], { method });
     const result = await openZip(bytes);
     equal(result.manifest.id, "quick-ford");
-    equal(result.files.size, 10);
+    equal(result.files.size, 16);
     ok(result.files.has("scripts/battles.lua"));
+    ok(result.files.has("audio/overhead.wav"));
   }
+  const legacy = await openZip(packed(quickPack({ legacyAudio: true })));
+  equal(legacy.files.size, 10);
+  const manifest = JSON.parse(read("packs/fantasy/pack.json"));
+  manifest.files.slash = "../slash.wav";
+  throws(() => readManifest(new TextEncoder().encode(JSON.stringify(manifest))), /Invalid/);
   throws(() => readManifest(new Uint8Array(32769)), /too large/);
   throws(() => readManifest(read("packs/fantasy/pack.json"), "different"), /Invalid/);
   throws(() => readManifest(new TextEncoder().encode("{}")), /Invalid/);
@@ -53,8 +59,9 @@ test("built-in pack fetches loose resources and stages them in the VM", async ()
     received.push(name);
     return new Response(read(name));
   });
-  equal(received.length, 13);
+  equal(received.length, 19);
   ok(received.includes("shaders/world.vert"));
+  ok(received.includes("packs/fantasy/audio/flank.wav"));
   equal(pack.manifest.id, "fantasy");
   await rejects(fetchPack(async () => new Response("", { status: 404 })), /Could not load/);
   const written = new Map();

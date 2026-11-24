@@ -11,6 +11,12 @@
     "banner": "textures/banner.tga",
     "strike": "audio/clash.wav",
     "horn": "audio/horn.wav",
-    "crowd": "audio/warfield.wav"
+    "crowd": "audio/warfield.wav",
+    "swing": "audio/swing.wav",
+    "hit": "audio/hit.wav",
+    "obstruction": "audio/obstruction.wav",
+    "slash": "audio/slash.wav",
+    "overhead": "audio/overhead.wav",
+    "flank": "audio/flank.wav"
   }
 }

@@ -15,7 +15,8 @@
 #endif
 
 static const char *const file_keys[] = {
-    "script", "soldier", "sword", "shield", "sprite", "banner", "strike", "horn", "crowd"
+    "script", "soldier", "sword", "shield", "sprite", "banner", "strike", "horn", "crowd",
+    "swing", "hit", "obstruction", "slash", "overhead", "flank"
 };
 
 typedef struct {
@@ -103,7 +104,7 @@ char *fodder_read(const char *path, size_t limit, size_t *length)
 
 bool fodder_pack_file(const FodderPack *pack, FodderPackFile file, char path[FODDER_PATH])
 {
-    return fodder_path_join(path, FODDER_PATH, pack->root, pack->files[file]);
+    return pack->files[file][0] && fodder_path_join(path, FODDER_PATH, pack->root, pack->files[file]);
 }
 
 static bool copy_label(char *target, size_t capacity, const char *value, size_t size)
@@ -140,7 +141,10 @@ static bool read_manifest(FodderPack *pack)
     if (valid)
         memcpy(pack->id, id, strlen(id) + 1);
     for (unsigned i = 0; valid && i < FODDER_PACK_FILES; ++i) {
-        const char *path_value = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(files, file_keys[i]));
+        const cJSON *entry = cJSON_GetObjectItemCaseSensitive(files, file_keys[i]);
+        if (!entry && i >= FODDER_SWING_AUDIO)
+            continue;
+        const char *path_value = cJSON_GetStringValue(entry);
         valid = path_value && fodder_valid_path(path_value);
         if (valid)
             memcpy(pack->files[i], path_value, strlen(path_value) + 1);

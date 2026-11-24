@@ -35,11 +35,13 @@ static float distance(const FodderSoldier *a, const FodderSoldier *b)
     return hypotf(a->x - b->x, a->z - b->z);
 }
 
-static FodderInput fight_with_the_line(const FodderBattle *battle)
+typedef enum { RETREAT, READ_ATTACKS, HOLD_GUARD, SWING_ON_COOLDOWN, STYLES } Style;
+
+static FodderInput fight_with_the_line(const FodderBattle *battle, Style style)
 {
     const FodderSoldier *player = battle->soldiers;
-    int nearest = -1, incoming = -1;
-    float closest = 10000.0f, impact = 0.19f;
+    int nearest = -1;
+    float closest = 10000.0f;
     for (unsigned i = battle->starting_per_side; i < battle->count; ++i) {
         const FodderSoldier *enemy = &battle->soldiers[i];
         if (enemy->health <= 0.0f)
@@ -49,21 +51,21 @@ static FodderInput fight_with_the_line(const FodderBattle *battle)
             closest = range;
             nearest = (int)i;
         }
-        if (enemy->target == 0 && range < 2.2f && enemy->windup > 0.0f && enemy->windup < impact) {
-            impact = enemy->windup;
-            incoming = (int)i;
-        }
     }
 
-    bool counter = battle->counter_time > 0.25f && battle->counter_target >= 0;
-    int target = counter ? battle->counter_target : incoming >= 0 ? incoming : nearest;
+    int incoming = battle->attacker;
+    bool threatened = incoming >= 0 && distance(player, &battle->soldiers[incoming]) < 2.2f;
+    bool counter = style == READ_ATTACKS && battle->counter_time > 0.25f && battle->counter_target >= 0;
+    int target = counter ? battle->counter_target : style == READ_ATTACKS && threatened ? incoming : nearest;
     if (target < 0)
         return (FodderInput){0};
     const FodderSoldier *enemy = &battle->soldiers[target];
-    float yaw = atan2f(enemy->x - player->x, player->z - enemy->z);
     float range = distance(player, enemy);
-    FodderInput input = {.look_x = fodder_wrap(yaw - player->yaw), .block = !counter && incoming >= 0};
-    input.attack = !input.block && (counter || range < 2.15f) && !battle->attack_held &&
+    FodderInput input = {.look_x = fodder_bearing(player, enemy)};
+    input.block = style == HOLD_GUARD ? range < 3.0f :
+                  style == READ_ATTACKS && !counter && threatened && enemy->windup <= 0.19f;
+    bool opening = counter || (range < 2.15f && (style == SWING_ON_COOLDOWN || !threatened));
+    input.attack = style != HOLD_GUARD && opening && !battle->attack_held &&
                    player->windup == 0.0f && player->recovery == 0.0f;
 
     // Keep pace with allies, then hold ground once involved in the fight.
@@ -96,45 +98,50 @@ static void verify_roster(const FodderBattle *battle, float ally_origin)
 
 static void play_full_battles(const FodderPack *pack)
 {
+    static const char *const styles[] = {"retreat", "read attacks", "hold guard", "swing on cooldown"};
     FodderBattle battle;
     FodderEffects base = fodder_pack_effects(pack, (unsigned[]){0, 0, 0});
     clock_t started = clock();
     unsigned retreat_deaths = 0, decorated_survivors = 0;
+    unsigned deeds[STYLES] = {0};
+    float lost_health[STYLES] = {0};
     for (unsigned index = 0; index < pack->variant_count; ++index) {
         const FodderVariant *variant = &pack->variants[index];
         unsigned limit = FODDER_TICKS_PER_SECOND * variant->seconds;
-        fodder_battle_start(&battle, &pack->arena, variant, base, 933 + index, FODDER_ARMY_SIZE);
-        float ally_origin = battle.soldiers[49].z;
-        bool flank_warning = false;
-        for (unsigned tick = 0; tick < limit && battle.outcome == FODDER_ACTIVE; ++tick) {
-            fodder_battle_tick(&battle, (FodderInput){.move = tick < 370 ? -1.0f : 0.0f});
-            flank_warning |= battle.flankers_nearby;
-        }
-        verify_roster(&battle, ally_origin);
-        EXPECT(flank_warning && battle.deeds == 0 && battle.outcome != FODDER_ACTIVE);
-        bool retreated_alive = battle.outcome == FODDER_SURVIVED;
-        if (!retreated_alive)
-            ++retreat_deaths;
-        double retreat_time = (double)battle.tick / FODDER_TICKS_PER_SECOND;
-
-        fodder_battle_start(&battle, &pack->arena, variant, base, 933 + index, FODDER_ARMY_SIZE);
-        for (unsigned tick = 0; tick < limit && battle.outcome == FODDER_ACTIVE; ++tick)
-            fodder_battle_tick(&battle, fight_with_the_line(&battle));
-        verify_roster(&battle, ally_origin);
-        EXPECT(battle.outcome != FODDER_ACTIVE);
-        bool fought_alive = battle.outcome == FODDER_SURVIVED;
-        if (fought_alive) {
-            EXPECT(battle.end == FODDER_ROUT || battle.end == FODDER_HORN);
-            if (battle.deeds >= FODDER_DEEDS_FOR_BONUS)
+        for (Style style = RETREAT; style < STYLES; ++style) {
+            fodder_battle_start(&battle, &pack->arena, variant, base, 933 + index, FODDER_ARMY_SIZE);
+            float ally_origin = battle.soldiers[49].z;
+            bool early_warning = false;
+            for (unsigned tick = 0; tick < limit && battle.outcome == FODDER_ACTIVE; ++tick) {
+                FodderInput input = style == RETREAT ? (FodderInput){.move = tick < 370 ? -1.0f : 0.0f} :
+                                    fight_with_the_line(&battle, style);
+                fodder_battle_tick(&battle, input);
+                if (battle.flanker >= 0 && distance(battle.soldiers, &battle.soldiers[battle.flanker]) > 11.0f)
+                    early_warning = true;
+            }
+            verify_roster(&battle, ally_origin);
+            EXPECT(battle.outcome != FODDER_ACTIVE);
+            if (style == RETREAT) {
+                EXPECT(early_warning && battle.deeds == 0);
+                retreat_deaths += battle.outcome == FODDER_FALLEN;
+            }
+            if (style == READ_ATTACKS && battle.outcome == FODDER_SURVIVED && battle.deeds >= FODDER_DEEDS_FOR_BONUS)
                 ++decorated_survivors;
+            if (battle.outcome == FODDER_SURVIVED)
+                EXPECT(battle.end == FODDER_ROUT || battle.end == FODDER_HORN);
+            float lost = 100.0f - battle.soldiers[0].health;
+            lost_health[style] += lost;
+            deeds[style] += battle.deeds;
+            printf("%s, %s: %s at %.1fs, %.1f health lost, %u deeds.\n", variant->name, styles[style],
+                   battle.outcome == FODDER_SURVIVED ? "survived" : "fell",
+                   (double)battle.tick / FODDER_TICKS_PER_SECOND, lost, battle.deeds);
         }
-        printf("%s: retreat %s at %.1fs, fighting %s at %.1fs with %u deeds.\n", variant->name,
-               retreated_alive ? "survived" : "fell", retreat_time, fought_alive ? "survived" : "fell",
-               (double)battle.tick / FODDER_TICKS_PER_SECOND, battle.deeds);
     }
     EXPECT(2 * retreat_deaths > pack->variant_count && 2 * decorated_survivors > pack->variant_count);
+    EXPECT(lost_health[READ_ATTACKS] < fminf(lost_health[HOLD_GUARD], lost_health[SWING_ON_COOLDOWN]));
+    EXPECT(deeds[READ_ATTACKS] > deeds[HOLD_GUARD] && deeds[READ_ATTACKS] > deeds[SWING_ON_COOLDOWN]);
     printf("%u full 1,000-soldier simulations ran in %.3f CPU seconds.\n",
-           2 * pack->variant_count, (double)(clock() - started) / CLOCKS_PER_SEC);
+           STYLES * pack->variant_count, (double)(clock() - started) / CLOCKS_PER_SEC);
 }
 
 static void fight_frames(FodderSession *session, unsigned ticks, FodderInput input)

@@ -8,10 +8,17 @@
 static const float step = 1.0f / FODDER_TICKS_PER_SECOND;
 static const float pi = 3.14159265358979323846f;
 static const float body_diameter = 0.70f;
-static const float strike_recovery = 0.38f;
+static const float player_reach = 2.30f;
 static const float strike_contact = 0.42f;
 
 enum { FLANK_TO_REAR = 1, FLANK_SWEEP_REAR };
+
+static const struct {
+    float windup, recovery, arc, damage, guard_cost;
+} strikes[] = {
+    [FODDER_STRIKE_SLASH] = {0.45f, 0.38f, 0.55f, 1.0f, 0.17f},
+    [FODDER_STRIKE_OVERHEAD] = {0.65f, 0.54f, 0.83f, 1.18f, 0.34f}
+};
 
 float fodder_clamp(float value, float low, float high)
 {
@@ -21,6 +28,11 @@ float fodder_clamp(float value, float low, float high)
 float fodder_wrap(float angle)
 {
     return remainderf(angle, 2.0f * pi);
+}
+
+float fodder_bearing(const FodderSoldier *observer, const FodderSoldier *other)
+{
+    return fodder_wrap(atan2f(other->x - observer->x, observer->z - other->z) - observer->yaw);
 }
 
 static float random_unit(FodderBattle *battle)
@@ -58,6 +70,7 @@ static void place_soldier(FodderBattle *battle, unsigned id, unsigned rank, unsi
     soldier->health = 100.0f;
     soldier->cooldown = random_unit(battle) * 0.4f;
     soldier->target = -1;
+    soldier->strike = FODDER_STRIKE_OVERHEAD;
 
     if (side == 1 && flankers && rank >= battle->starting_per_side - 2 * flankers) {
         unsigned wing_rank = rank - (battle->starting_per_side - 2 * flankers);
@@ -86,6 +99,9 @@ void fodder_battle_start(FodderBattle *battle, const FodderArena *arena,
     battle->stamina = 1.0f;
     battle->winner = -1;
     battle->counter_target = -1;
+    battle->counter_swing = -1;
+    battle->attacker = -1;
+    battle->flanker = -1;
     unsigned flankers = variant->flankers < per_side / 8 ? variant->flankers : per_side / 8;
     for (unsigned side = 0; side < 2; ++side) {
         for (unsigned rank = 0; rank < per_side; ++rank)
@@ -229,10 +245,12 @@ static bool clip_segment(float origin, float delta, float bounds_min, float boun
     return *first <= *last;
 }
 
-static bool clear_between(const FodderBattle *battle, unsigned id, unsigned target)
+static bool clear_strike(const FodderBattle *battle, unsigned id, int target)
 {
-    const FodderSoldier *a = &battle->soldiers[id], *b = &battle->soldiers[target];
-    float vx = b->x - a->x, vz = b->z - a->z;
+    const FodderSoldier *a = &battle->soldiers[id];
+    const FodderSoldier *b = target >= 0 ? &battle->soldiers[target] : NULL;
+    float vx = b ? b->x - a->x : sinf(a->yaw) * player_reach;
+    float vz = b ? b->z - a->z : -cosf(a->yaw) * player_reach;
     for (unsigned i = 0; i < battle->arena->obstacle_count; ++i) {
         const FodderObstacle *o = &battle->arena->obstacles[i];
         float first = 0.0f, last = 1.0f;
@@ -245,12 +263,12 @@ static bool clear_between(const FodderBattle *battle, unsigned id, unsigned targ
     if (length < 0.0001f)
         return true;
     const float radius = body_diameter * 0.42f;
-    int min_x = cell(fminf(a->x, b->x) - radius), max_x = cell(fmaxf(a->x, b->x) + radius);
-    int min_z = cell(fminf(a->z, b->z) - radius), max_z = cell(fmaxf(a->z, b->z) + radius);
+    int min_x = cell(fminf(a->x, a->x + vx) - radius), max_x = cell(fmaxf(a->x, a->x + vx) + radius);
+    int min_z = cell(fminf(a->z, a->z + vz) - radius), max_z = cell(fmaxf(a->z, a->z + vz) + radius);
     for (int z = min_z; z <= max_z; ++z) {
         for (int x = min_x; x <= max_x; ++x) {
             for (int i = battle->grid[z * FODDER_GRID_SIDE + x]; i >= 0; i = battle->next[i]) {
-                if ((unsigned)i == id || (unsigned)i == target)
+                if ((unsigned)i == id || i == target)
                     continue;
                 const FodderSoldier *body = &battle->soldiers[i];
                 float dx = body->x - a->x, dz = body->z - a->z;
@@ -266,10 +284,13 @@ static bool clear_between(const FodderBattle *battle, unsigned id, unsigned targ
     return true;
 }
 
-static int find_opponent(const FodderBattle *battle, unsigned id, float radius, bool melee)
+static int find_opponent(const FodderBattle *battle, unsigned id, float radius, bool aimed)
 {
     const FodderSoldier *soldier = &battle->soldiers[id];
-    float best_distance = radius * radius;
+    float reach = radius * radius, best_distance = reach;
+    float best_aim = 0.75f;
+    float forward_x = aimed ? sinf(soldier->yaw) : 0.0f;
+    float forward_z = aimed ? -cosf(soldier->yaw) : 0.0f;
     int best = -1;
     int min_z = cell(soldier->z - radius);
     int max_z = cell(soldier->z + radius);
@@ -282,11 +303,17 @@ static int find_opponent(const FodderBattle *battle, unsigned id, float radius, 
                 if (other->side == soldier->side)
                     continue;
                 float distance = distance_squared(soldier, other);
-                if (distance >= best_distance)
+                if (distance >= reach)
                     continue;
-                if (melee && (facing(soldier, other) <= sqrtf(distance) * 0.60f ||
-                              !clear_between(battle, id, (unsigned)i)))
+                if (aimed) {
+                    float projection = forward_x * (other->x - soldier->x) + forward_z * (other->z - soldier->z);
+                    float aim = projection / fmaxf(0.001f, sqrtf(distance));
+                    if (aim < best_aim || (aim == best_aim && distance >= best_distance))
+                        continue;
+                    best_aim = aim;
+                } else if (distance >= best_distance) {
                     continue;
+                }
                 best = i;
                 best_distance = distance;
             }
@@ -295,9 +322,10 @@ static int find_opponent(const FodderBattle *battle, unsigned id, float radius, 
     return best;
 }
 
-static void begin_strike(FodderSoldier *soldier, float duration)
+static void begin_strike(FodderSoldier *soldier, FodderStrike strike, float duration)
 {
     soldier->guarding = false;
+    soldier->strike = (uint8_t)strike;
     soldier->windup_duration = duration;
     soldier->windup = duration;
 }
@@ -306,8 +334,9 @@ static bool advance_strike(FodderSoldier *soldier)
 {
     if (soldier->windup > 0.0f) {
         soldier->windup = fmaxf(0.0f, soldier->windup - step);
-        if (soldier->windup == 0.0f) {
-            soldier->recovery = strike_recovery;
+        if (soldier->windup < 0.00001f) {
+            soldier->windup = 0.0f;
+            soldier->recovery = strikes[soldier->strike].recovery;
             return true;
         }
     } else {
@@ -321,13 +350,14 @@ float fodder_strike_phase(const FodderSoldier *soldier)
     if (soldier->windup > 0.0f)
         return strike_contact * (1.0f - soldier->windup / fmaxf(soldier->windup, soldier->windup_duration));
     if (soldier->recovery > 0.0f)
-        return 1.0f - (1.0f - strike_contact) * soldier->recovery / strike_recovery;
+        return 1.0f - (1.0f - strike_contact) * soldier->recovery / strikes[soldier->strike].recovery;
     return 0.0f;
 }
 
 static void feedback(FodderBattle *battle, FodderCombatFeedback signal)
 {
     battle->feedback = signal;
+    battle->feedback_tick = battle->tick;
     battle->feedback_time = 0.60f;
 }
 
@@ -354,7 +384,9 @@ static void read_player(FodderBattle *battle, FodderInput input)
     battle->attack_held = input.attack;
     if (pressed && player->windup == 0.0f && player->recovery == 0.0f &&
         !player->guarding && battle->stamina >= 0.18f) {
-        begin_strike(player, 0.24f);
+        battle->counter_swing = fodder_counter_opponent(battle);
+        begin_strike(player, FODDER_STRIKE_SLASH, 0.24f);
+        battle->sword_recoil = false;
         battle->stamina -= 0.18f;
     }
 
@@ -378,20 +410,44 @@ static bool front_guard(const FodderSoldier *target, const FodderSoldier *attack
     return target->guarding && facing(target, attacker) > 0.52f * sqrtf(distance_squared(target, attacker));
 }
 
+static int counter_in_aim(const FodderBattle *battle, int target)
+{
+    if (target < 0)
+        return -1;
+    const FodderSoldier *player = battle->soldiers, *enemy = &battle->soldiers[target];
+    float range = distance_squared(player, enemy);
+    return enemy->health > 0.0f && range < player_reach * player_reach &&
+           facing(player, enemy) > sqrtf(range) * 0.70f ? target : -1;
+}
+
+int fodder_counter_opponent(const FodderBattle *battle)
+{
+    if (battle->soldiers[0].windup > 0.0f)
+        return counter_in_aim(battle, battle->counter_swing);
+    return battle->counter_time > 0.0f ? counter_in_aim(battle, battle->counter_target) : -1;
+}
+
 static int player_hit(FodderBattle *battle, bool *countered)
 {
     FodderSoldier *player = &battle->soldiers[0];
     if (player->health <= 0.0f || !advance_strike(player))
         return -1;
-    int victim = find_opponent(battle, 0, 2.30f, true);
+    int counter = battle->counter_swing;
+    int victim = counter >= 0 ? counter_in_aim(battle, counter) : find_opponent(battle, 0, player_reach, true);
+    if ((counter < 0 || victim >= 0) && !clear_strike(battle, 0, victim)) {
+        battle->sword_recoil = true;
+        feedback(battle, FODDER_COMBAT_OBSTRUCTED);
+        return -1;
+    }
     if (victim < 0) {
         feedback(battle, FODDER_COMBAT_MISS);
         return -1;
     }
 
     FodderSoldier *target = &battle->soldiers[victim];
+    target->provoked_until = battle->tick + 3 * FODDER_TICKS_PER_SECOND;
     float damage = battle->variant.player_damage;
-    *countered = battle->counter_time > 0.0f && victim == battle->counter_target;
+    *countered = counter >= 0;
     if (*countered) {
         damage *= 2.15f;
         battle->counter_time = 0.0f;
@@ -399,7 +455,8 @@ static int player_hit(FodderBattle *battle, bool *countered)
         ++battle->deeds;
         feedback(battle, FODDER_COMBAT_COUNTER);
     } else if (front_guard(target, player)) {
-        damage *= 0.46f;
+        damage *= 0.26f;
+        battle->sword_recoil = true;
         feedback(battle, FODDER_COMBAT_BLOCKED);
     } else {
         feedback(battle, FODDER_COMBAT_HIT);
@@ -416,25 +473,33 @@ static void hit(FodderBattle *battle, unsigned id)
     FodderSoldier *target = &battle->soldiers[soldier->target];
     float distance = distance_squared(soldier, target);
     if (target->health <= 0.0f || distance > 2.05f * 2.05f ||
-        facing(soldier, target) <= sqrtf(distance) * 0.55f ||
-        !clear_between(battle, id, (unsigned)soldier->target))
+        facing(soldier, target) <= sqrtf(distance) * strikes[soldier->strike].arc ||
+        !clear_strike(battle, id, soldier->target))
         return;
     float damage = soldier->side == 0 ? battle->variant.ally_damage : battle->variant.enemy_damage;
     if (soldier->target == 0) {
-        damage *= 2.65f;
-        float cost = 0.17f * battle->effects.block_cost;
+        damage *= 2.65f * strikes[soldier->strike].damage;
+        float cost = strikes[soldier->strike].guard_cost * battle->effects.block_cost;
+        float parry_cost = 0.06f * battle->effects.block_cost;
         if (front_guard(target, soldier)) {
-            if (battle->guard_window > 0.0f && battle->stamina >= cost * 0.32f) {
-                battle->stamina -= cost * 0.32f;
+            if (battle->guard_window > 0.0f && battle->stamina >= parry_cost) {
+                battle->stamina -= parry_cost;
                 battle->guard_window = 0.0f;
                 battle->counter_time = 0.76f;
                 battle->counter_target = (int)id;
+                target->recovery = 0.0f;
                 soldier->stagger = 0.46f;
+                feedback(battle, FODDER_COMBAT_PARRY);
                 return;
             }
             if (battle->stamina >= cost) {
                 battle->stamina -= cost;
                 damage *= 0.18f;
+                feedback(battle, FODDER_COMBAT_GUARDED);
+            } else {
+                battle->stamina = 0.0f;
+                target->guarding = false;
+                feedback(battle, FODDER_COMBAT_GUARD_BROKEN);
             }
         }
         battle->hurt = fmaxf(battle->hurt, damage / 23.0f);
@@ -475,11 +540,13 @@ static void choose_action(FodderBattle *battle, unsigned id)
         soldier->flank_stage = FLANK_SWEEP_REAR;
     }
 
-    int target = find_opponent(battle, id, 7.5f, false);
+    bool provoked = soldier->provoked_until > battle->tick &&
+                    distance_squared(soldier, battle->soldiers) < 3.2f * 3.2f;
+    int target = provoked ? 0 : find_opponent(battle, id, 7.5f, false);
     if (target >= 0) {
         FodderSoldier *enemy = &battle->soldiers[target];
         float distance = distance_squared(soldier, enemy);
-        if (distance > 1.75f * 1.75f || !clear_between(battle, id, (unsigned)target)) {
+        if (distance > 1.75f * 1.75f || !clear_strike(battle, id, target)) {
             follow(battle, soldier, enemy->x, enemy->z);
             return;
         }
@@ -489,7 +556,11 @@ static void choose_action(FodderBattle *battle, unsigned id)
         if (soldier->cooldown <= 0.0f && battle->strikes_at[target] < limit) {
             soldier->target = (int16_t)target;
             ++battle->strikes_at[target];
-            begin_strike(soldier, 0.37f + random_unit(battle) * 0.18f);
+            FodderStrike strike = enemy->guarding || soldier->strike == FODDER_STRIKE_SLASH ?
+                                  FODDER_STRIKE_OVERHEAD : FODDER_STRIKE_SLASH;
+            begin_strike(soldier, strike, strikes[strike].windup);
+            if (target == 0)
+                battle->attacker = (int)id;
             soldier->cooldown = 0.98f + random_unit(battle) * 0.70f;
         } else {
             soldier->guarding = true;
@@ -518,8 +589,10 @@ static void run_ai(FodderBattle *battle, unsigned id)
     if (soldier->health <= 0.0f)
         return;
     soldier->cooldown -= step;
-    if (soldier->flank_stage == FLANK_SWEEP_REAR && distance_squared(soldier, battle->soldiers) < 11.0f * 11.0f)
-        battle->flankers_nearby = true;
+    float player_distance = distance_squared(soldier, battle->soldiers);
+    if (soldier->flank_stage == FLANK_SWEEP_REAR && player_distance < 22.0f * 22.0f &&
+        (battle->flanker < 0 || player_distance < distance_squared(&battle->soldiers[battle->flanker], battle->soldiers)))
+        battle->flanker = (int)id;
     if (soldier->stagger > 0.0f) {
         soldier->stagger = fmaxf(0.0f, soldier->stagger - step);
         return;
@@ -527,10 +600,12 @@ static void run_ai(FodderBattle *battle, unsigned id)
     if (soldier->windup > 0.0f || soldier->recovery > 0.0f) {
         if (advance_strike(soldier))
             hit(battle, id);
+        else if (soldier->target == 0 && soldier->windup > 0.0f)
+            battle->attacker = (int)id;
         return;
     }
 
-    unsigned interval = distance_squared(soldier, battle->soldiers) < 26.0f * 26.0f ? 3u : 12u;
+    unsigned interval = player_distance < 26.0f * 26.0f ? 3u : 12u;
     if ((battle->tick + id) % interval == 0)
         choose_action(battle, id);
 
@@ -586,7 +661,8 @@ void fodder_battle_tick(FodderBattle *battle, FodderInput input)
     if (battle->outcome != FODDER_ACTIVE)
         return;
     ++battle->tick;
-    battle->flankers_nearby = false;
+    battle->attacker = -1;
+    battle->flanker = -1;
     memset(battle->incoming, 0, battle->count * sizeof(battle->incoming[0]));
     make_grid(battle);
     if (battle->soldiers[0].health > 0.0f)

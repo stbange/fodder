@@ -116,6 +116,12 @@ static void test_game_components(const char *assets)
     CHECK(!fodder_scene_load(app.renderer, &changed, error));
     strcpy(changed.files[FODDER_STRIKE_AUDIO], "missing");
     CHECK(!fodder_sound_load(&changed, error));
+    changed = *app.pack;
+    for (unsigned i = FODDER_SWING_AUDIO; i < FODDER_PACK_FILES; ++i)
+        changed.files[i][0] = '\0';
+    FodderSound *legacy = fodder_sound_load(&changed, error);
+    CHECK(legacy);
+    fodder_sound_free(legacy);
 
     keyboard((SDL_KeyboardEvent){.down = false});
     send_key(SDL_SCANCODE_Q);
@@ -141,13 +147,25 @@ static void test_game_components(const char *assets)
     app.input.attack = true;
     app.session.battle.soldiers[1].x = 180;
     app.session.battle.soldiers[2].health = 0;
-    app.session.battle.soldiers[3].windup = 0.2f;
-    app.session.battle.soldiers[3].windup_duration = 0.4f;
-    app.session.battle.soldiers[3].stagger = 0.3f;
+    FodderSoldier *attacker = &app.session.battle.soldiers[FODDER_ARMY_SIZE];
+    attacker->windup = 0.2f;
+    attacker->windup_duration = 0.65f;
+    attacker->strike = FODDER_STRIKE_OVERHEAD;
+    attacker->x = 1.4f;
+    attacker->z = 15.0f;
+    attacker[1].x = 0.4f;
+    attacker[1].z = 14.0f;
+    attacker[1].stagger = 0.3f;
+    attacker[2].x = -0.3f;
+    attacker[2].z = 19.0f;
+    app.session.battle.attacker = FODDER_ARMY_SIZE;
+    app.session.battle.flanker = FODDER_ARMY_SIZE + 2;
+    app.session.battle.counter_target = FODDER_ARMY_SIZE + 1;
     app.session.battle.counter_time = 0.5f;
     app.session.battle.hurt = 0.6f;
-    step(0.036);
+    fodder_sound_frame(app.sound, &app.session);
     flat_frame(960, 540, false);
+    step(0.036);
     app.input.attack = false;
     app.input.block = true;
     step(0.1);

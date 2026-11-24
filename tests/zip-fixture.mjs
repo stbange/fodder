@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { ROLES } from "../web/packs.mjs";
 
 function crc32(bytes) {
   let value = -1;
@@ -48,11 +49,12 @@ export function zip(entries, { method = 0, corrupt = false } = {}) {
   return Buffer.concat([...files, index, end]);
 }
 
-export function quickPack({ id = "quick-ford", title = "Quick Ford test pack", invalid = false } = {}) {
+export function quickPack({ id = "quick-ford", title = "Quick Ford test pack", invalid = false, legacyAudio = false } = {}) {
   const root = resolve("assets/packs/fantasy");
   const manifest = JSON.parse(readFileSync(resolve(root, "pack.json"), "utf8"));
   manifest.id = id;
   manifest.title = title;
+  if (legacyAudio) manifest.files = Object.fromEntries(ROLES.map((role) => [role, manifest.files[role]]));
   const entries = Object.values(manifest.files).map((path) => [path, readFileSync(resolve(root, path))]);
   entries[0][1] = invalid ? "this is invalid Lua" : entries[0][1].toString()
     .replaceAll(/seconds = seconds, rout = 0.29/g, "seconds = 2, rout = 0.29")

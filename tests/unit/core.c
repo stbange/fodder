@@ -169,6 +169,9 @@ static void test_pack(const FodderPack *pack)
                      "rules.effects = function(a,b,c) if a == 3 then error({}) end; return effects(a,b,c) end");
     CHECK(fodder_pack_open(&fixture_pack, test_root, error));
     CHECK(!error[0] && fixture_pack.variant_count == 3 && fixture_pack.variants[0].flankers == 0);
+    char path[FODDER_PATH];
+    CHECK(!fodder_pack_file(&fixture_pack, FODDER_FLANK_AUDIO, path));
+    CHECK(fodder_pack_file(pack, FODDER_FLANK_AUDIO, path));
     unsigned ranks[] = {3, 8, 5};
     FodderEffects fallback = fodder_pack_effects(&fixture_pack, ranks);
     CHECK(fallback.recovery == 1 && fallback.block_cost == 1 && fallback.dressing == 0);
@@ -243,6 +246,7 @@ static void settle_near(FodderBattle *battle, bool in_front)
     attacker->yaw = in_front ? 3.1415927f : 0;
     attacker->windup = 0.005f;
     attacker->windup_duration = 0.4f;
+    attacker->strike = FODDER_STRIKE_SLASH;
     attacker->target = 0;
 }
 
@@ -362,7 +366,7 @@ static void test_melee(const FodderPack *pack)
     ticks(&battle, 10, (FodderInput){.attack = true});
     CHECK(fodder_strike_phase(player) > 0 && fodder_strike_phase(player) < 0.42f);
     ticks(&battle, 6, (FodderInput){.attack = true});
-    CHECK(fodder_strike_phase(player) >= 0.42f && battle.feedback == FODDER_COMBAT_MISS);
+    CHECK(fodder_strike_phase(player) >= 0.42f && battle.feedback == FODDER_COMBAT_OBSTRUCTED && battle.sword_recoil);
     CHECK(enemy->health == 100.0f);
     ally->x = 3;
     ticks(&battle, 85, (FodderInput){.attack = true});
@@ -400,7 +404,119 @@ static void test_melee(const FodderPack *pack)
     arena.obstacles[0] = (FodderObstacle){0, player->z - 0.6f, 0.3f, 0.11f, 2};
     settle_near(&battle, true);
     ticks(&battle, 16, (FodderInput){.attack = true});
-    CHECK(battle.feedback == FODDER_COMBAT_MISS && enemy->health == 100.0f && player->health == 100.0f);
+    CHECK(battle.feedback == FODDER_COMBAT_OBSTRUCTED && enemy->health == 100.0f && player->health == 100.0f);
+}
+
+static void test_combat_choices(const FodderPack *pack)
+{
+    FodderArena arena = pack->arena;
+    arena.obstacle_count = 0;
+    FodderVariant variant = pack->variants[0];
+    variant.ally_speed = variant.enemy_speed = 0.0f;
+    FodderEffects effects = {1, 1, 0};
+    FodderBattle battle;
+    FodderSoldier *player = battle.soldiers;
+    FodderSoldier *foe = &battle.soldiers[2], *other = &battle.soldiers[3];
+
+    for (unsigned pattern = FODDER_STRIKE_SLASH; pattern <= FODDER_STRIKE_OVERHEAD; ++pattern) {
+        fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+        settle_near(&battle, true);
+        foe->strike = (uint8_t)pattern;
+        battle.block_held = true;
+        ticks(&battle, 1, (FodderInput){.block = true});
+        float cost = pattern == FODDER_STRIKE_SLASH ? 0.17f : 0.34f;
+        CHECK(close_float(battle.stamina, 1.0f - cost) && battle.feedback == FODDER_COMBAT_GUARDED);
+        CHECK(battle.feedback_tick == battle.tick && player->health > 96.0f);
+
+        fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+        settle_near(&battle, true);
+        foe->strike = (uint8_t)pattern;
+        ticks(&battle, 1, (FodderInput){.block = true});
+        CHECK(close_float(battle.stamina, 0.94f) && battle.feedback == FODDER_COMBAT_PARRY);
+        CHECK(player->health == 100.0f && fodder_counter_opponent(&battle) == 2);
+    }
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    foe->strike = FODDER_STRIKE_OVERHEAD;
+    battle.stamina = 0.2f;
+    battle.block_held = true;
+    ticks(&battle, 1, (FodderInput){.block = true});
+    CHECK(battle.feedback == FODDER_COMBAT_GUARD_BROKEN && battle.stamina == 0 && !player->guarding);
+    CHECK(player->health < 85.0f);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    other->x = 0.8f;
+    other->z = player->z - 1.0f;
+    other->cooldown = 30.0f;
+    ticks(&battle, 1, (FodderInput){.block = true});
+    CHECK(fodder_counter_opponent(&battle) == 2 && fodder_bearing(player, other) > 0.60f);
+    battle.counter_time = 0.08f;
+    ticks(&battle, 1, (FodderInput){.attack = true, .look_x = 0.60f});
+    ticks(&battle, 7, (FodderInput){0});
+    CHECK(battle.counter_time == 0 && fodder_counter_opponent(&battle) == 2);
+    ticks(&battle, 8, (FodderInput){0});
+    CHECK(foe->health == 0 && other->health == 100.0f && battle.feedback == FODDER_COMBAT_COUNTER);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    ticks(&battle, 1, (FodderInput){.block = true});
+    battle.soldiers[1].x = 0.0f;
+    battle.soldiers[1].z = player->z - 0.74f;
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(foe->health == 100.0f && battle.feedback == FODDER_COMBAT_OBSTRUCTED && battle.sword_recoil);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    settle_near(&battle, true);
+    other->x = 1.2f;
+    other->z = player->z - 0.6f;
+    other->cooldown = 30.0f;
+    ticks(&battle, 1, (FodderInput){.block = true});
+    ticks(&battle, 1, (FodderInput){.attack = true});
+    ticks(&battle, 1, (FodderInput){.look_x = 1.1f});
+    ticks(&battle, 14, (FodderInput){0});
+    CHECK(foe->health == 100.0f && other->health == 100.0f && battle.feedback == FODDER_COMBAT_MISS);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    foe->x = 0;
+    foe->z = player->z - 2.1f;
+    other->x = 0.8f;
+    other->z = player->z - 1.3f;
+    other->cooldown = 30.0f;
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(foe->health < 100.0f && other->health == 100.0f && battle.feedback == FODDER_COMBAT_HIT);
+    CHECK(foe->provoked_until > battle.tick);
+
+    fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+    ticks(&battle, 16, (FodderInput){.attack = true});
+    CHECK(battle.feedback == FODDER_COMBAT_MISS && !battle.sword_recoil);
+
+    for (unsigned pattern = FODDER_STRIKE_SLASH; pattern <= FODDER_STRIKE_OVERHEAD; ++pattern) {
+        fodder_battle_start(&battle, &arena, &variant, effects, 19, 1);
+        FodderSoldier *attacker = &battle.soldiers[1];
+        attacker->z = player->z - 1.6f;
+        attacker->x = 0.0f;
+        attacker->cooldown = 0.0f;
+        attacker->strike = pattern == FODDER_STRIKE_SLASH ? FODDER_STRIKE_OVERHEAD : FODDER_STRIKE_SLASH;
+        ticks(&battle, 2, (FodderInput){0});
+        CHECK(battle.attacker == 1 && attacker->strike == pattern);
+        float duration = pattern == FODDER_STRIKE_SLASH ? 0.45f : 0.65f;
+        CHECK(close_float(attacker->windup, duration));
+        unsigned strike_ticks = pattern == FODDER_STRIKE_SLASH ? 27 : 39;
+        ticks(&battle, strike_ticks - 1, (FodderInput){0});
+        CHECK(battle.attacker == 1 && player->health == 100.0f);
+        ticks(&battle, 1, (FodderInput){0});
+        CHECK(battle.attacker == -1 && player->health < 100.0f && attacker->recovery > 0.0f);
+
+        fodder_battle_start(&battle, &arena, &variant, effects, 15, 2);
+        settle_near(&battle, true);
+        foe->x = 1.02f;
+        foe->z = player->z - 1.30f;
+        foe->strike = (uint8_t)pattern;
+        ticks(&battle, 1, (FodderInput){0});
+        CHECK((player->health == 100.0f) == (pattern == FODDER_STRIKE_OVERHEAD));
+    }
 }
 
 typedef struct {
@@ -482,6 +598,7 @@ int main(int argc, char **argv)
     test_geometry(&pack);
     test_battle(&pack);
     test_melee(&pack);
+    test_combat_choices(&pack);
     test_session(&pack);
     fodder_pack_close(&pack);
     remove(fixture);

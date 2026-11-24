@@ -1,5 +1,6 @@
 export const BUILTIN_PACK = "fantasy";
 export const ROLES = ["script", "soldier", "sword", "shield", "sprite", "banner", "strike", "horn", "crowd"];
+const combatRoles = ["swing", "hit", "obstruction", "slash", "overhead", "flank"];
 const MAX_ARCHIVE = 32 * 1024 * 1024;
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_EXPANDED = 96 * 1024 * 1024;
@@ -17,7 +18,8 @@ export function readManifest(bytes, expected) {
       (expected && manifest.id !== expected) ||
       typeof manifest.title !== "string" || !manifest.title.trim() ||
       new TextEncoder().encode(manifest.title).length >= 48 ||
-      ROLES.some((role) => !packPath(manifest.files?.[role]))) {
+      ROLES.some((role) => !packPath(manifest.files?.[role])) ||
+      combatRoles.some((role) => Object.hasOwn(manifest.files, role) && !packPath(manifest.files[role]))) {
     throw new Error("Invalid pack.json. Check the API version, ID and asset paths.");
   }
   return manifest;
@@ -129,7 +131,7 @@ export async function fetchPack(fetcher) {
   const root = `packs/${BUILTIN_PACK}/`;
   const manifestFile = await data(root + "pack.json");
   const manifest = readManifest(manifestFile, BUILTIN_PACK);
-  const paths = [...new Set(ROLES.map((role) => manifest.files[role]))];
+  const paths = [...new Set([...ROLES, ...combatRoles].map((role) => manifest.files[role]).filter(Boolean))];
   const files = new Map(await Promise.all(paths.map(async (path) => [root + path, await data(root + path)])));
   files.set(root + "pack.json", manifestFile);
   for (const path of ["ui/font.txt", "shaders/world.vert", "shaders/world.frag"]) {

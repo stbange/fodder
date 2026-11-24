@@ -14,8 +14,11 @@ test("renders the WebAssembly game and deploys", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const wasm = page.waitForResponse((response) => response.url().endsWith("/fodder.wasm"));
+  const cues = ["slash.wav", "overhead.wav", "flank.wav"].map((name) =>
+    page.waitForResponse((response) => response.url().endsWith(`/audio/${name}`)));
   await camp(page);
   expect((await wasm).headers()["content-type"]).toContain("application/wasm");
+  expect((await Promise.all(cues)).every((response) => response.ok())).toBe(true);
   await expect(page.getByRole("heading", { name: "Hold the Ford" })).toBeVisible();
   await page.getByRole("button", { name: "Deploy", exact: true }).click();
   await expect(page.locator("#game")).toHaveAttribute("data-screen", "fight");
@@ -87,7 +90,7 @@ test("installs a ZIP, restores a pending reward, and saves its upgrade", async (
   await page.getByRole("button", { name: "Content packs" }).click();
   await upload(page, zip(quickPack({ invalid: true }), { method: 8 }));
   await expect(page.locator("#pack-status")).toContainText("Lua:");
-  await upload(page, zip(quickPack(), { method: 8 }));
+  await upload(page, zip(quickPack({ legacyAudio: true }), { method: 8 }));
   await expect(page.getByRole("heading", { name: "The quick crossing" })).toBeVisible();
   await page.getByRole("button", { name: "Deploy", exact: true }).click();
   await expect(page.getByRole("heading", { name: "You survived" })).toBeVisible({ timeout: 18000 });

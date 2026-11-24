@@ -68,7 +68,7 @@ typedef struct {
 typedef struct {
     float x, y, z, yaw;
     FodderColor dye;
-    float phase, guard;
+    float phase, guard, overhead, counter;
 } Instance;
 
 typedef struct {
@@ -188,7 +188,7 @@ static void bind_vertices(FodderRenderer *r, Drawable *buffer)
     gl->VertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Instance), (void *)offsetof(Instance, dye));
     gl->VertexAttribDivisor(4, 1);
     gl->EnableVertexAttribArray(6);
-    gl->VertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(Instance), (void *)offsetof(Instance, phase));
+    gl->VertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(Instance), (void *)offsetof(Instance, phase));
     gl->VertexAttribDivisor(6, 1);
     gl->BindVertexArray(0);
 }
@@ -424,6 +424,7 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
     draw(r, &scene->world, 0, 0, identity, &neutral, 1);
     draw(r, &scene->pennants, 2, scene->banner, identity, &neutral, 1);
     unsigned nearby_count = 0, distant_count = 0;
+    int counter = fodder_counter_opponent(battle);
     const float *clip = camera.data;
     for (unsigned i = 1; i < battle->count; ++i) {
         const FodderSoldier *unit = &battle->soldiers[i];
@@ -440,7 +441,7 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
         if (fabsf(unit->vx) + fabsf(unit->vz) > 0.1f)
             y += bob;
         FodderColor dye = colors[unit->side];
-        if (unit->windup > 0) {
+        if ((int)i == battle->attacker) {
             dye.r = fminf(1, dye.r + 0.37f);
             dye.g = fminf(1, dye.g + 0.10f);
         }
@@ -450,7 +451,8 @@ static void draw_world(FodderRenderer *r, const FodderScene *scene, const Fodder
             dye.a = -1;
         }
         Instance instance = {
-            unit->x, y, unit->z, unit->yaw, dye, fodder_strike_phase(unit), (float)unit->guarding
+            unit->x, y, unit->z, unit->yaw, dye, fodder_strike_phase(unit), (float)unit->guarding,
+            (float)(unit->strike == FODDER_STRIKE_OVERHEAD), (float)((int)i == counter)
         };
         if (unit->stagger > 0.0f) {
             instance.z += 0.10f * cosf(unit->yaw);
@@ -479,13 +481,17 @@ static void equipment(FodderRenderer *r, const FodderScene *scene, const FodderS
     const FodderBattle *battle = &session->battle;
     const FodderSoldier *player = battle->soldiers;
     float phase = fodder_strike_phase(player);
-    float attack = ease(0.0f, 0.42f, phase) * (1.0f - ease(0.62f, 1.0f, phase));
-    float sweep = ease(0.38f, 0.61f, phase);
+    float attack = ease(0.0f, 0.27f, phase) * (1.0f - ease(0.62f, 1.0f, phase));
+    float sweep = ease(0.30f, 0.56f, phase);
+    if (battle->sword_recoil && phase >= 0.42f) {
+        sweep = ease(0.30f, 0.56f, 0.42f);
+        attack *= 1.0f - ease(0.42f, 0.79f, phase);
+    }
     float lift = player->guarding ? 0.31f : 0.0f;
     float walk = sinf((float)battle->tick * 0.19f) * 0.017f *
                  fminf(1, hypotf(player->vx, player->vz));
     FodderMatrix sword = fodder_transform(
-        (FodderVec){0.43f + attack * (0.22f - 1.05f * sweep),
+        (FodderVec){0.43f + attack * (0.22f - 1.30f * sweep),
                     -0.40f + walk + attack * (0.24f - 0.09f * sweep),
                     -0.78f + attack * (0.07f - 0.24f * sweep)},
         0.10f + attack * (0.35f - 1.15f * sweep), -0.33f + attack * (0.67f - 0.92f * sweep),
@@ -498,6 +504,16 @@ static void equipment(FodderRenderer *r, const FodderScene *scene, const FodderS
     const Instance neutral = {.dye = {0.23f, 0.72f, 0.55f, 1}};
     draw(r, &scene->sword, 0, 0, fodder_multiply(pose, sword), &neutral, 1);
     draw(r, &scene->shield, 0, 0, fodder_multiply(pose, shield), &neutral, 1);
+}
+
+static const char *direction(const FodderSoldier *player, const FodderSoldier *unit)
+{
+    float bearing = fodder_bearing(player, unit);
+    if (fabsf(bearing) < 0.70f)
+        return "AHEAD";
+    if (fabsf(bearing) > 2.44f)
+        return "BEHIND";
+    return bearing < 0.0f ? "LEFT" : "RIGHT";
 }
 
 static void fight_hud(FodderRenderer *r, const FodderSession *session, bool xr)
@@ -523,11 +539,25 @@ static void fight_hud(FodderRenderer *r, const FodderSession *session, bool xr)
     unsigned deeds = battle->deeds < FODDER_DEEDS_FOR_BONUS ? battle->deeds : FODDER_DEEDS_FOR_BONUS;
     snprintf(line, sizeof(line), "DEEDS %u/%u", deeds, FODDER_DEEDS_FOR_BONUS);
     text(r, line, xr ? 610 : 820, lower + 30, scale * 0.8f, ivory);
-    static const char *const cues[] = {"", "HIT", "SWING MISSED", "SHIELD HIT", "COUNTER"};
-    const char *cue = battle->counter_time > 0.0f ? "COUNTER NOW" :
-                      battle->feedback_time > 0.0f ? cues[battle->feedback] :
-                      battle->flankers_nearby ? "FLANKERS NEARBY" : "";
+    static const char *const cues[] = {
+        "", "HIT", "SWING MISSED", "SHIELD HIT", "BLADE STOPPED",
+        "COUNTER HIT", "PARRY", "GUARD HELD", "GUARD BROKEN"
+    };
+    const char *cue = fodder_counter_opponent(battle) >= 0 ? "COUNTER NOW" :
+                      battle->feedback_time > 0.0f ? cues[battle->feedback] : "";
     centered(r, cue, xr ? 342 : 317, scale * 0.8f, gold);
+    if (battle->attacker >= 0) {
+        const FodderSoldier *attacker = &battle->soldiers[battle->attacker];
+        if (attacker->health > 0.0f) {
+            const char *attack = attacker->strike == FODDER_STRIKE_OVERHEAD ? "OVERHEAD" : "SLASH";
+            snprintf(line, sizeof(line), "%s %s", attack, direction(battle->soldiers, attacker));
+            centered(r, line, xr ? 208 : 220, scale * 0.79f, gold);
+        }
+    }
+    if (battle->flanker >= 0) {
+        snprintf(line, sizeof(line), "FLANKERS %s", direction(battle->soldiers, &battle->soldiers[battle->flanker]));
+        centered(r, line, xr ? 174 : 65, scale * 0.8f, gold);
+    }
     if (!xr) {
         rectangle(r, 478, 269, 4, 2, ivory);
         rectangle(r, 479, 268, 2, 4, ivory);
@@ -558,6 +588,7 @@ static void menu_hud(FodderRenderer *r, const FodderSession *s, bool xr)
         centered(r, xr ? "STICK MOVE / TRIGGER STRIKE / GRIP BLOCK" : "WASD MOVE / MOUSE LOOK / LEFT STRIKE / RIGHT BLOCK",
                  top + 222, scale * 0.75f, gray);
         centered(r, "BLOCK AT IMPACT. RELEASE AND STRIKE TO COUNTER.", top + 244, scale * 0.72f, gold);
+        centered(r, "SIDESTEP OVERHEAD STRIKES.", top + 260, scale * 0.72f, gold);
         break;
     case FODDER_PAUSED:
         centered(r, "BATTLE PAUSED", top + 76, scale * 2, ivory);

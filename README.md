@@ -13,11 +13,13 @@ Download the package for your operating system from a successful GitHub Actions
 run. Extract the platform archive inside it so `assets/` is beside the executable or
 `Fodder.app`. Press **Enter** to deploy. Move with **WASD**, look with the mouse,
 strike with the left button, and block with the right button. Press **Escape**
-to pause. Click once per swing. Raise your shield just before an incoming
-strike lands to stagger the attacker, then release block and strike during the
-opening. You can also step clear of a committed swing. Watch the banks for
-enemy flankers. Choose upgrades with **1–3** or
-select one with the arrow keys and **Enter**. [Builds](https://github.com/stbange/fodder/actions)
+to pause. Click once per swing. A sword drawn to the side tells you a quick
+slash is coming. An overhead strike takes longer, costs more stamina to block,
+and leaves a longer opening if you sidestep it. Raise your shield just before
+impact to stagger the attacker, then face the highlighted soldier, release
+block, and strike. Your blade can catch on soldiers or ruins. Listen for the
+flank warning and watch its direction on the HUD. Choose upgrades with **1–3**
+or select one with the arrow keys and **Enter**. [Builds](https://github.com/stbange/fodder/actions)
 
 The web build switches to touch controls on phones. Drag the pad on the left to
 move and drag on the right to look. Use the buttons to strike, block, or pause.
@@ -64,6 +66,8 @@ IDs use lowercase ASCII, numbers, hyphens, or underscores. Keep `pack.json`
 in the pack's root with API version 1 and the paths to its Lua script, meshes,
 sprites, textures, and audio. Asset paths use lowercase portable names such as
 `models/levy.mesh`.
+Optional `swing`, `hit`, `obstruction`, `slash`, `overhead`, and `flank` WAV
+roles provide the combat cues. Older packs can still use the original audio roles.
 
 The main Lua script returns an arena, a list of battles, three named upgrades,
 and an `effects` function for converting saved ranks to combat stats.
@@ -85,7 +89,8 @@ Use the fantasy pack as a starting point for another genre.
   `0` for body, `1` for the sword arm, and `2` for the shield arm. The sword
   arm pivots about `(0.32, 1.16, -0.06)` in model space. Sprites and banners use
   uncompressed, bottom-origin 32-bit TGA and sounds use WAV. Regenerate assets with
-  `python3 tools/generate_art.py`.
+  `python3 tools/generate_art.py`. Add `--with-voice` to regenerate the
+  flank call with an FFmpeg build that includes Flite.
 
 ## Verify
 

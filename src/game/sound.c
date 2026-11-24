@@ -1,22 +1,27 @@
 #include "sound.h"
 
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 typedef struct {
     float *samples;
     int count, offset;
+    float pan;
 } Clip;
 
 struct FodderSound {
     SDL_AudioStream *stream;
-    Clip strike, horn, crowd;
+    Clip clips[FODDER_PACK_FILES];
     FodderScreen previous;
-    bool striking, horn_started;
+    unsigned feedback_tick;
+    int attacker;
+    bool flank_called, horn_started;
 };
 
 static const SDL_AudioSpec mono = {SDL_AUDIO_F32, 1, 22050};
+static const SDL_AudioSpec stereo = {SDL_AUDIO_F32, 2, 22050};
 
 static bool load_clip(Clip *clip, const FodderPack *pack, FodderPackFile file)
 {
@@ -34,17 +39,21 @@ static bool load_clip(Clip *clip, const FodderPack *pack, FodderPackFile file)
     SDL_free(source);
     if (!valid)
         return false;
-    *clip = (Clip){(float *)decoded, size / (int)sizeof(float), size / (int)sizeof(float)};
+    *clip = (Clip){(float *)decoded, size / (int)sizeof(float), size / (int)sizeof(float), 0.0f};
     return clip->count > 0;
 }
 
 FodderSound *fodder_sound_load(const FodderPack *pack, char error[FODDER_ERROR])
 {
     FodderSound *sound = calloc(1, sizeof(*sound));
-    if (sound && load_clip(&sound->strike, pack, FODDER_STRIKE_AUDIO) &&
-        load_clip(&sound->horn, pack, FODDER_HORN_AUDIO) &&
-        load_clip(&sound->crowd, pack, FODDER_CROWD_AUDIO)) {
-        sound->crowd.offset = 0;
+    bool valid = sound != NULL;
+    for (int i = FODDER_STRIKE_AUDIO; valid && i < FODDER_PACK_FILES; ++i) {
+        if (i < FODDER_SWING_AUDIO || pack->files[i][0])
+            valid = load_clip(&sound->clips[i], pack, (FodderPackFile)i);
+    }
+    if (valid) {
+        sound->clips[FODDER_CROWD_AUDIO].offset = 0;
+        sound->attacker = -1;
         return sound;
     }
     fodder_sound_free(sound);
@@ -58,9 +67,8 @@ void fodder_sound_free(FodderSound *sound)
         return;
     if (sound->stream)
         SDL_DestroyAudioStream(sound->stream);
-    SDL_free(sound->strike.samples);
-    SDL_free(sound->horn.samples);
-    SDL_free(sound->crowd.samples);
+    for (int i = FODDER_STRIKE_AUDIO; i < FODDER_PACK_FILES; ++i)
+        SDL_free(sound->clips[i].samples);
     free(sound);
 }
 
@@ -70,7 +78,7 @@ void fodder_sound_enable(FodderSound *sound)
         return;
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
         return;
-    sound->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &mono, NULL, NULL);
+    sound->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &stereo, NULL, NULL);
     if (sound->stream)
         SDL_ResumeAudioStreamDevice(sound->stream);
 }
@@ -80,32 +88,78 @@ static float sample(Clip *clip)
     return clip->offset < clip->count ? clip->samples[clip->offset++] : 0.0f;
 }
 
+static void play(FodderSound *sound, FodderPackFile file, float pan)
+{
+    sound->clips[file].offset = 0;
+    sound->clips[file].pan = pan;
+}
+
+static void play_contact(FodderSound *sound, FodderCombatFeedback feedback)
+{
+    static const FodderPackFile files[] = {
+        [FODDER_COMBAT_HIT] = FODDER_HIT_AUDIO,
+        [FODDER_COMBAT_MISS] = FODDER_SWING_AUDIO,
+        [FODDER_COMBAT_BLOCKED] = FODDER_STRIKE_AUDIO,
+        [FODDER_COMBAT_OBSTRUCTED] = FODDER_OBSTRUCTION_AUDIO,
+        [FODDER_COMBAT_COUNTER] = FODDER_HIT_AUDIO,
+        [FODDER_COMBAT_PARRY] = FODDER_STRIKE_AUDIO,
+        [FODDER_COMBAT_GUARDED] = FODDER_STRIKE_AUDIO,
+        [FODDER_COMBAT_GUARD_BROKEN] = FODDER_OBSTRUCTION_AUDIO
+    };
+    FodderPackFile file = files[feedback];
+    play(sound, sound->clips[file].count ? file : FODDER_STRIKE_AUDIO, 0.0f);
+}
+
 void fodder_sound_frame(FodderSound *sound, const FodderSession *session)
 {
     if (!sound->stream)
         return;
     const FodderBattle *battle = &session->battle;
-    if (session->screen == FODDER_FIGHT && sound->previous == FODDER_CAMP)
-        sound->horn.offset = 0;
-    bool striking = battle->soldiers[0].recovery > 0.0f;
-    if (striking && !sound->striking)
-        sound->strike.offset = 0;
+    if (session->screen == FODDER_FIGHT) {
+        if (sound->previous == FODDER_CAMP || sound->previous == FODDER_RESULT) {
+            play(sound, FODDER_HORN_AUDIO, 0.0f);
+            sound->flank_called = false;
+        }
+        if (battle->attacker >= 0 && battle->attacker != sound->attacker) {
+            const FodderSoldier *attacker = &battle->soldiers[battle->attacker];
+            FodderPackFile cue = attacker->strike == FODDER_STRIKE_OVERHEAD ? FODDER_OVERHEAD_AUDIO : FODDER_SLASH_AUDIO;
+            if (attacker->health > 0.0f)
+                play(sound, cue, 0.86f * sinf(fodder_bearing(battle->soldiers, attacker)));
+        }
+        if (battle->flanker >= 0 && !sound->flank_called) {
+            play(sound, FODDER_FLANK_AUDIO, 0.0f);
+            sound->flank_called = true;
+        }
+        if (battle->feedback_tick && battle->feedback_tick != sound->feedback_tick)
+            play_contact(sound, battle->feedback);
+    }
     if (!sound->horn_started && battle->outcome != FODDER_ACTIVE) {
-        sound->horn.offset = 0;
+        play(sound, FODDER_HORN_AUDIO, 0.0f);
         sound->horn_started = true;
     } else if (battle->outcome == FODDER_ACTIVE) {
         sound->horn_started = false;
     }
-    sound->striking = striking;
+    sound->attacker = battle->attacker;
+    sound->feedback_tick = battle->feedback_tick;
     sound->previous = session->screen;
     for (int fill = 0; fill < 3 && SDL_GetAudioStreamQueued(sound->stream) < 3072; ++fill) {
         float frame[512];
         const float level = session->screen == FODDER_FIGHT ? 0.57f : 0.24f;
-        for (unsigned i = 0; i < sizeof(frame) / sizeof(frame[0]); ++i) {
-            if (sound->crowd.offset == sound->crowd.count)
-                sound->crowd.offset = 0;
-            frame[i] = sample(&sound->crowd) * level + sample(&sound->strike) * 0.33f +
-                       sample(&sound->horn) * 0.46f;
+        Clip *crowd = &sound->clips[FODDER_CROWD_AUDIO];
+        for (unsigned i = 0; i < sizeof(frame) / sizeof(frame[0]); i += 2) {
+            if (crowd->offset == crowd->count)
+                crowd->offset = 0;
+            float ambient = sample(crowd) * level + sample(&sound->clips[FODDER_HORN_AUDIO]) * 0.46f;
+            float left = ambient, right = ambient;
+            for (int file = FODDER_SWING_AUDIO; file < FODDER_PACK_FILES; ++file) {
+                Clip *clip = &sound->clips[file];
+                float value = sample(clip) * 0.54f;
+                left += value * (1.0f - clip->pan);
+                right += value * (1.0f + clip->pan);
+            }
+            float clash = sample(&sound->clips[FODDER_STRIKE_AUDIO]) * 0.43f;
+            frame[i] = fodder_clamp(left + clash, -1.0f, 1.0f);
+            frame[i + 1] = fodder_clamp(right + clash, -1.0f, 1.0f);
         }
         SDL_PutAudioStreamData(sound->stream, frame, sizeof(frame));
     }

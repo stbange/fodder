@@ -7,6 +7,8 @@ from math import exp, pi, sin
 from pathlib import Path
 import random
 import struct
+import subprocess
+import sys
 import wave
 import zlib
 
@@ -217,6 +219,29 @@ def audio():
             output.setparams((1,2,rate,0,"NONE","not compressed"))
             output.writeframes(b"".join(samples))
 
+    cues = {
+        "swing": (.21, lambda t, n: n * .34 * sin(pi * t / .21) ** 3),
+        "hit": (.20, lambda t, n: (.28 * n + .45 * sin(2*pi*106*t)) * exp(-t*29)),
+        "obstruction": (.23, lambda t, n: (.08*n + .47*sin(2*pi*235*t) + .13*sin(2*pi*510*t)) * exp(-t*23)),
+        "slash": (.19, lambda t, n: (.09*n + .40*sin(2*pi*(680*t + 590*t*t))) * sin(pi*t/.19)),
+        "overhead": (.30, lambda t, n: (.11*n + .34*sin(2*pi*(235*t + 460*t*t)) + .18*sin(2*pi*362*t)) * sin(pi*t/.30)),
+    }
+    for name, (seconds, cue) in cues.items():
+        samples = [struct.pack("<h", int(30000 * cue(i / rate, rng.uniform(-1, 1))))
+                   for i in range(int(rate * seconds))]
+        with wave.open(str(PACK / "audio" / f"{name}.wav"), "wb") as output:
+            output.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+            output.writeframes(b"".join(samples))
+
+
+def flank_voice():
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "flite=text=Flankers!:voice=kal16",
+        "-af", "highpass=f=230,atempo=1.18,acompressor=threshold=0.12:ratio=2:makeup=2.4,"
+        "aecho=0.8:0.7:65:0.19,alimiter=limit=0.85",
+        "-ac", "1", "-ar", "22050", str(PACK / "audio" / "flank.wav")
+    ], check=True)
+
 
 def emblem():
     def chunk(name, data):
@@ -242,6 +267,8 @@ if __name__ == "__main__":
     emblem()
     pixels()
     audio()
+    if "--with-voice" in sys.argv:
+        flank_voice()
     (ROOT / "ui" / "font.txt").write_text(
         "".join(f"{ord(letter)} {rows}\n" for letter, rows in sorted(FONT.items())), encoding="ascii"
     )
